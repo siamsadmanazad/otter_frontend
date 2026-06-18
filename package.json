@@ -7,7 +7,9 @@
     "dev": "set NODE_OPTIONS=--max-old-space-size=4096 && next dev",
     "dev:turbo": "next dev --turbopack",
     "lint": "next lint",
-    "start": "next start"
+    "start": "next start",
+    "test:visual": "playwright test",
+    "test:visual:update": "playwright test --update-snapshots"
   },
   "dependencies": {
     "@auth/core": "latest",
@@ -108,6 +110,7 @@
     "zustand": "^5.0.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "@tanstack/eslint-plugin-query": "^5.81.2",
     "@types/bcrypt": "^5.0.2",
     "@types/jsonwebtoken": "^9.0.10",

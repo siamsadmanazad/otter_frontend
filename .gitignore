@@ -39,3 +39,8 @@ next-env.d.ts
 *.bak
 *.old
 *.tmp
+# Playwright run artifacts (baseline PNGs in tests/visual/__screenshots__ ARE committed)
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache
