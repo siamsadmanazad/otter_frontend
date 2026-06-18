@@ -213,7 +213,7 @@ export function ProfileEditForm({ type, defaultData, onClose }: ProfileEditFormP
     onSuccess: (data) => {
       toast.success("Profile updated successfully!");
       // Invalidate the 'user' query for the specific user ID to refetch latest data
-      queryClient.invalidateQueries({ queryKey: ["user", defaultData?._id] });
+      queryClient.invalidateQueries({ queryKey: ["user", defaultData?.id] });
       onClose(); // Close the modal on successful submission
     },
     onError: (error) => {
@@ -222,7 +222,7 @@ export function ProfileEditForm({ type, defaultData, onClose }: ProfileEditFormP
     },
     onSettled: () => {
       // Optional: Invalidate again on settled to ensure consistency, though onSuccess already does it
-      queryClient.invalidateQueries({ queryKey: ["user", defaultData?._id] });
+      queryClient.invalidateQueries({ queryKey: ["user", defaultData?.id] });
     },
   });
 
@@ -716,14 +716,14 @@ export function ProfileEditFormNoModal() {
     },
     onSuccess: (data) => {
       toast.success("Profile updated successfully!");
-      queryClient.invalidateQueries({ queryKey: ["user", defaultData?._id] });
+      queryClient.invalidateQueries({ queryKey: ["user", defaultData?.id] });
     },
     onError: (error) => {
       console.error("Error updating profile:", error);
       toast.error(error.message || "An error occurred while updating profile.");
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["user", defaultData?._id] });
+      queryClient.invalidateQueries({ queryKey: ["user", defaultData?.id] });
     },
   });
 

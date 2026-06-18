@@ -251,7 +251,7 @@ export default function ReviewContainer() {
       ) : (
         <div className="grid grid-cols-1 gap-6">
           {reviews.map((review: ReviewDocument) => (
-            <ReviewCard key={review._id} review={review} />
+            <ReviewCard key={review.id} review={review} />
           ))}
         </div>
       )}

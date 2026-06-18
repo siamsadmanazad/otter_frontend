@@ -99,7 +99,7 @@ export const NotificationContainer = () => {
         (updatedNotification: any) => {
           setNotifications((prevNotifications) =>
             prevNotifications.map((notif) =>
-              notif._id === updatedNotification._id
+              notif.id === updatedNotification.id
                 ? updatedNotification
                 : notif
             )
@@ -110,7 +110,7 @@ export const NotificationContainer = () => {
       socket.on("notificationRemoved", (removedNotificationId: string) => {
         setNotifications((prevNotifications) =>
           prevNotifications.filter(
-            (notif) => notif._id !== removedNotificationId
+            (notif) => notif.id !== removedNotificationId
           )
         );
       });
@@ -125,7 +125,7 @@ export const NotificationContainer = () => {
 
   const markAsRead = (id: string) => {
     if (socket) {
-      const notificationToUpdate = notifications.find((n) => n._id === id);
+      const notificationToUpdate = notifications.find((n) => n.id === id);
       if (notificationToUpdate && !notificationToUpdate.isRead) {
         socket.emit(
           "isNotificationRead",
@@ -134,13 +134,13 @@ export const NotificationContainer = () => {
             if (response) {
               setNotifications((prev) =>
                 prev.map((notif) =>
-                  notif._id === response._id ? response : notif
+                  notif.id === response.id ? response : notif
                 )
               );
             } else {
               setNotifications((prev) =>
                 prev.map((notif) =>
-                  notif._id === id ? { ...notif, isRead: true } : notif
+                  notif.id === id ? { ...notif, isRead: true } : notif
                 )
               );
             }
@@ -188,12 +188,12 @@ export const NotificationContainer = () => {
             return new Promise<void>((resolve) => {
               socket.emit(
                 "isNotificationRead",
-                notif._id!,
+                notif.id!,
                 (response: any | null) => {
                   if (!response) {
                     setNotifications((prev) =>
                       prev.map((n) =>
-                        n._id === notif._id ? { ...n, isRead: true } : n
+                        n.id === notif.id ? { ...n, isRead: true } : n
                       )
                     );
                   }
@@ -221,11 +221,11 @@ export const NotificationContainer = () => {
         (response: any | null) => {
           if (response) {
             setNotifications((prevNotifications) =>
-              prevNotifications.filter((notif) => notif._id !== response._id)
+              prevNotifications.filter((notif) => notif.id !== response.id)
             );
           } else {
             setNotifications((prevNotifications) =>
-              prevNotifications.filter((notif) => notif._id !== id)
+              prevNotifications.filter((notif) => notif.id !== id)
             );
           }
         }
@@ -315,7 +315,7 @@ export const NotificationContainer = () => {
           ) : (
             notifications.map((notification) => (
               <DropdownMenuItem
-                key={notification._id}
+                key={notification.id}
                 className={`p-4 border-b border-gray-100 dark:border-gray-700 ${
                   !notification.isRead
                     ? "bg-blue-50 hover:bg-blue-100 dark:bg-gray-700 dark:hover:bg-gray-600"
@@ -325,7 +325,7 @@ export const NotificationContainer = () => {
               >
                 <div
                   className="flex items-start flex-1 cursor-pointer"
-                  onClick={() => markAsRead(notification._id!)}
+                  onClick={() => markAsRead(notification.id!)}
                 >
                   <span className="mr-3 dark:text-gray-200">
                     {getNotificationIcon(notification.type)}
@@ -356,7 +356,7 @@ export const NotificationContainer = () => {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleDeleteNotification(notification._id!);
+                    handleDeleteNotification(notification.id!);
                   }}
                   className="ml-2 p-1 rounded-full hover:bg-gray-200 text-gray-500 hover:text-red-500 transition-colors duration-200 dark:hover:bg-gray-700 dark:text-gray-400 dark:hover:text-red-400"
                   aria-label="Delete notification"

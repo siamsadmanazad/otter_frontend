@@ -76,7 +76,7 @@ export default function NotificationPage() {
       socket.on("notificationUpdated", (updatedNotification: any) => {
         setNotifications((prevNotifications) =>
           prevNotifications.map((notif) =>
-            notif._id === updatedNotification._id ? updatedNotification : notif
+            notif.id === updatedNotification.id ? updatedNotification : notif
           )
         );
       });
@@ -84,7 +84,7 @@ export default function NotificationPage() {
       socket.on("notificationRemoved", (removedNotificationId: string) => {
         setNotifications((prevNotifications) =>
           prevNotifications.filter(
-            (notif) => notif._id !== removedNotificationId
+            (notif) => notif.id !== removedNotificationId
           )
         );
       });
@@ -106,7 +106,7 @@ export default function NotificationPage() {
             {notifications.length > 0 ? (
               notifications.map((notification) => (
                 <Card
-                  key={notification._id}
+                  key={notification.id}
                   className={`flex items-center space-x-4 p-4 rounded-xl transition-colors duration-200 ease-in-out ${
                     notification.isRead
                       ? "bg-white dark:bg-gray-800"

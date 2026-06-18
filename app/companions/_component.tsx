@@ -80,7 +80,7 @@ export default function CompanionPage() {
         {allSuggestedUsers.length > 0 ? (
           allSuggestedUsers.map((profile) => (
             <Card
-              key={profile._id}
+              key={profile.id}
               className="flex flex-col max-w-[625px] max-h-[325px] dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700"
             >
               <CardHeader className="flex flex-row items-center space-x-4">
@@ -93,7 +93,7 @@ export default function CompanionPage() {
                 <div className="flex-1">
                   <CardTitle className="text-lg">
                     <Link
-                      href={`/person/${profile.user?._id}`}
+                      href={`/person/${profile.user?.id}`}
                       className="text-black hover:text-blue-500 duration-300 dark:text-white dark:hover:text-blue-400"
                     >
                       {profile.user?.fullName}
@@ -101,7 +101,7 @@ export default function CompanionPage() {
                   </CardTitle>
                   <CardDescription>
                     <Link
-                      href={`/person/${profile.user?._id}`}
+                      href={`/person/${profile.user?.id}`}
                       className="text-blue-500 hover:text-blue-300 duration-300 dark:text-blue-400 dark:hover:text-blue-300"
                     >
                       @{profile.user?.username}
@@ -109,7 +109,7 @@ export default function CompanionPage() {
                   </CardDescription>
                 </div>
                 <FollowButton
-                  targetUserId={profile.user._id}
+                  targetUserId={profile.user.id}
                   initialIsFollowing={false}
                 />
               </CardHeader>

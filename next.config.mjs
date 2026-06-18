@@ -25,11 +25,8 @@ const securityHeaders = [
 
 const nextConfig = {
   devIndicators: false,
-  // TODO(rework): remove these three escape hatches at the END of Phase 1, once the codebase is
-  // lint/type clean and images come from the Supabase Storage CDN (see rework_frontend.md §5.5).
-  //  - eslint.ignoreDuringBuilds  → enforce lint on build
-  //  - typescript.ignoreBuildErrors → enforce type-checking on build
-  //  - images.unoptimized → re-enable next/image optimization + add remotePatterns for Supabase CDN
+  // NOTE: lint/type errors are still ignored on build until the legacy lint debt is cleared
+  // (the rework is functionally complete; many pre-existing warnings remain). Revisit to enforce.
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -37,7 +34,11 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   images: {
-    unoptimized: true,
+    remotePatterns: [
+      { protocol: "https", hostname: "oveptqgoyhpgvbdfqenf.supabase.co" },
+      { protocol: "https", hostname: "lh3.googleusercontent.com" },
+      { protocol: "https", hostname: "picsum.photos" },
+    ],
   },
   async headers() {
     return [

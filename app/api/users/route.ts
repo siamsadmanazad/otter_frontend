@@ -33,6 +33,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     const data = {
       ...mapProfile(profile),
       profile: {
+        id: profile.id,
         postsCount: posts.count ?? 0,
         commentsCount: comments.count ?? 0,
         followersCount: followers.count ?? 0,

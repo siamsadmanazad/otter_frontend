@@ -9,7 +9,7 @@ import type {
   IDisplayConversation,
   Group,
 } from "@/types/chat.d";
-import { Socket } from "socket.io-client";
+import type { SocketLike as Socket } from "@/lib/useWebsocket";
 
 interface UseChatLogicProps {
   selectedChatType: "private" | "group" | "global" | "user" | null;

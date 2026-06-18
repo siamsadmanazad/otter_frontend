@@ -172,7 +172,7 @@ export function SearchModal({
           followers: 0,
         })),
         // shops: (apiData.shops || []).map((shop: any) => ({
-        //   id: shop._id,
+        //   id: shop.id,
         //   name: shop.name,
         //   avatar: shop.avatar || "/placeholder.svg",
         //   rating: shop.rating || 0,

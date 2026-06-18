@@ -65,7 +65,7 @@ export function FollowModal({ type, children, userId, currentLoggedInUserId }: F
       if (response.status === 200) {
         setUsers(prevUsers =>
           prevUsers.map(user =>
-            user._id === userIdToToggle
+            user.id === userIdToToggle
               ? { ...user, isFollowing: !isCurrentlyFollowing }
               : user
           )
@@ -101,7 +101,7 @@ export function FollowModal({ type, children, userId, currentLoggedInUserId }: F
             </div>
           ) : (
             users.map((user) => (
-              <div key={user._id} className="flex items-center justify-between p-3 rounded-lg border">
+              <div key={user.id} className="flex items-center justify-between p-3 rounded-lg border">
                 <div className="flex items-center gap-3">
                   <img
                     src={user.profileImage || `https://placehold.co/40x40/E0E0E0/333333?text=${getInitials(user.fullName)}`}
@@ -118,12 +118,12 @@ export function FollowModal({ type, children, userId, currentLoggedInUserId }: F
                 </div>
 
                 <div className="flex gap-2">
-                  {user._id !== currentLoggedInUserId && (
+                  {user.id !== currentLoggedInUserId && (
                     user.isFollowing ? (
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleToggleFollow(user._id, true)}
+                        onClick={() => handleToggleFollow(user.id, true)}
                         disabled={isUpdating}
                       >
                         Unfollow
@@ -132,7 +132,7 @@ export function FollowModal({ type, children, userId, currentLoggedInUserId }: F
                       <Button
                         variant="default"
                         size="sm"
-                        onClick={() => handleToggleFollow(user._id, false)}
+                        onClick={() => handleToggleFollow(user.id, false)}
                         disabled={isUpdating}
                       >
                         Follow

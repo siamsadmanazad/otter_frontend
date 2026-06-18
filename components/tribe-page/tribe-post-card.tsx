@@ -21,7 +21,7 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { IPostProps } from "@/types/post";
 import { toast } from "sonner";
-import { Socket } from "socket.io-client";
+import type { SocketLike as Socket } from "@/lib/useWebsocket";
 
 dayjs.extend(relativeTime);
 
@@ -99,22 +99,22 @@ export function TribePostCard({
       postUrl: string
     ) => {
       console.log("trigger create notification");
-      if (!post?.owner?._id || !currentUserProfile?.data?.profile?._id) {
+      if (!post?.owner?.id || !currentUserProfile?.data?.profile?.id) {
         console.log(
           " one of the required params were missing to invoke a notification "
         );
         console.log(
           isSocketConnected,
-          post?.owner?._id,
-          currentUserProfile?.data?.profile?._id
+          post?.owner?.id,
+          currentUserProfile?.data?.profile?.id
         );
         return;
       }
       try {
-        if (post.owner._id !== currentUserProfile?.data?.profile?._id) {
+        if (post.owner.id !== currentUserProfile?.data?.profile?.id) {
           socket.emit("createNotification", {
-            createdBy: currentUserProfile?.data?.profile?._id,
-            receiver: post.owner._id,
+            createdBy: currentUserProfile?.data?.profile?.id,
+            receiver: post.owner.id,
             content,
             type,
             postUrl,
@@ -164,7 +164,7 @@ export function TribePostCard({
             ...oldData,
             pages: oldData.pages.map((page: IPostProps[]) =>
               page.map((p) =>
-                p._id === postId
+                p.id === postId
                   ? { ...p, comments: [...p.comments, temporaryComment] }
                   : p
               )
@@ -220,7 +220,7 @@ export function TribePostCard({
             ...oldData,
             pages: oldData.pages.map((page: IPostProps[]) =>
               page.map((p) => {
-                if (p._id === postId) {
+                if (p.id === postId) {
                   const newLikes = isLiked
                     ? p.likes.filter(
                         (like) => like.username !== currentLoggedInUser?.username
@@ -263,7 +263,7 @@ export function TribePostCard({
         toast.error("You must be logged in to like a post.");
         return;
       }
-      likeMutation.mutate(post._id);
+      likeMutation.mutate(post.id);
     };
   
     const updateCommentMutation = useMutation({
@@ -287,11 +287,11 @@ export function TribePostCard({
             ...oldData,
             pages: oldData.pages.map((page: IPostProps[]) =>
               page.map((p) =>
-                p._id === post._id
+                p.id === post.id
                   ? {
                       ...p,
                       comments: p.comments.map((comment) =>
-                        comment._id === commentId
+                        comment.id === commentId
                           ? {
                               ...comment,
                               content: updatedCommentData.content,
@@ -309,7 +309,7 @@ export function TribePostCard({
         createNotification(
           "updated comment on your post",
           "COMMENT",
-          `/post/${post._id}`
+          `/post/${post.id}`
         );
         setEditingComment(null);
         setEditCommentText("");
@@ -368,11 +368,11 @@ export function TribePostCard({
             ...oldData,
             pages: oldData.pages.map((page: IPostProps[]) =>
               page.map((p) =>
-                p._id === post._id
+                p.id === post.id
                   ? {
                       ...p,
                       comments: p.comments.filter(
-                        (comment) => comment._id !== deletedCommentId
+                        (comment) => comment.id !== deletedCommentId
                       ),
                     }
                   : p
@@ -394,7 +394,7 @@ export function TribePostCard({
     const isValidId = (id?: string) => id && id.length > 0;
   
   return (
-              <Card key={post._id} className="dark:bg-gray-900 dark:border-gray-800">
+              <Card key={post.id} className="dark:bg-gray-900 dark:border-gray-800">
             <CardContent className="p-0">
               <div className="p-4 pb-0">
                 <div className="flex items-start justify-between">

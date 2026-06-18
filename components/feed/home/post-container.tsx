@@ -144,7 +144,7 @@ export function PostContainer() {
       {posts.length > 0
         ? posts.map((postItem) => (
             <PostCardV2
-              key={postItem._id}
+              key={postItem.id}
               post={postItem}
               session={session}
               currentUserProfile={currentUserProfile}

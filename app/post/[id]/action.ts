@@ -1,73 +1,27 @@
-import { runDBOperation } from "@/lib/useDB";
-import postsSchema from "@/utils/schema/posts-schema";
-import mongoose from "mongoose";
-import "@/utils/schema/comments-schema";
-import "@/utils/schema/like-schema";
-import "@/utils/schema/user-schema";
+import { createAdminClient } from "@/lib/supabase/admin";
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Server-side single-post fetch (used by app/post/[id]). Uses the build_post_json RPC (IPostProps).
 export default async function GetPost(id: string) {
   try {
-    // Validate ObjectId format
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return null;
-    }
+    if (!UUID_RE.test(id)) return null;
+    const db = createAdminClient();
+    const { data, error } = await db.rpc("build_post_json", { p_post_id: id });
+    if (error || !data) return null;
 
-    const post = await runDBOperation(async () => {
-      return await postsSchema
-        .findById(id)
-        .populate({
-          path: "owner",
-          model: "User",
-          select:
-            "_id username fullName profileImage bio location role createdAt",
-        })
-        .populate({
-          path: "likes",
-          model: "User",
-          select: "_id username fullName profileImage",
-        })
-        .populate({
-          path: "comments",
-          model: "Comment",
-          select: "_id content createdAt updatedAt",
-          populate: {
-            path: "owner",
-            model: "User",
-            select: "_id username fullName profileImage",
-          },
-          options: {
-            sort: { createdAt: -1 },
-          },
-        })
-        .lean()
-        .exec();
-    });
-
-    if (!post) {
-      return null;
-    }
-
-      // Serialize the entire object to convert ObjectIds to strings
-      // or else it fails because we cannot send objectified json to client component
-    const serializedPost = JSON.parse(JSON.stringify(post));
-
-    const enhancedPost = {
-      ...serializedPost,
+    const post = data as Record<string, any>;
+    return {
+      ...post,
       stats: {
-        likesCount: serializedPost.likes?.length || 0,
-        commentsCount: serializedPost.comments?.length || 0,
-        hasImage:
-          Array.isArray(serializedPost.image) &&
-          serializedPost.image.length > 0,
-        hasCaption:
-          typeof serializedPost.caption === "string" &&
-          serializedPost.caption.trim().length > 0,
+        likesCount: post.likes?.length || 0,
+        commentsCount: post.comments?.length || 0,
+        hasImage: Array.isArray(post.image) && post.image.length > 0,
+        hasCaption: typeof post.caption === "string" && post.caption.trim().length > 0,
       },
-      comments: serializedPost.comments || [],
-      likedBy: serializedPost.likes || [],
+      comments: post.comments || [],
+      likedBy: post.likes || [],
     };
-
-    return enhancedPost;
   } catch (error) {
     console.error("Error fetching post:", error);
     return null;

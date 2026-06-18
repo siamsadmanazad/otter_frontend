@@ -116,7 +116,7 @@ export function PostContainer({ profileId }: { profileId: string }) {
     <div className="space-y-0 md:space-y-6 pb-20 md:pb-0 bg-gray-50 dark:bg-gray-900 min-h-screen">
       {posts.length > 0
         ? posts.map((postItem) => (
-            <PostCard key={postItem._id} post={postItem} session={session} socket={socket} isSocketConnected={isConnected}/>
+            <PostCard key={postItem.id} post={postItem} session={session} socket={socket} isSocketConnected={isConnected}/>
           ))
         : !isLoading &&
           !isError && (
