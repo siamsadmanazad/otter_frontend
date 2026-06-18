@@ -194,21 +194,31 @@ Add code-quality tooling that is currently missing.
 
 **Step 4 — Install Supabase, remove dead deps.**
 
+> **Sequencing note (important):** the *heavy* dead deps are load-bearing across many files —
+> `next-auth` (~50 files), `mongoose` (~23), `sanity`/`@sanity/*`/`next-sanity` (the whole Studio
+> subsystem), `bcrypt`, `jsonwebtoken`. Removing those **is** the Phase 1 seam work (auth seam removes
+> next-auth/bcrypt/jsonwebtoken; data seam removes mongoose; media seam removes sanity), done
+> file-by-file with verification in §5.1–5.5. Ripping them all out *now* would break the dev server
+> (losing the baseline + progressive verification) and duplicate Phase 1. So Step 4 is **additive +
+> safe-removal only**: scaffold Supabase, swap env, and remove only the dead deps that have **zero
+> first-party imports**. The heavy ones are removed in their Phase 1 seam and the §5.5 cleanup.
+
 ```
-Swap the dependency set from the old (dead) backend to Supabase. Do not wire anything up yet.
+Swap the dependency set toward Supabase. Additive + safe-removal only — do not break the running app.
 1. Add @supabase/supabase-js and @supabase/ssr.
-2. Remove these now-dead dependencies and any imports that reference them (leave the calling code
-   compiling by stubbing/commenting the call sites with a clear // TODO(rework): replace with Supabase
-   marker — we re-wire them in Phase 1): mongoose, socket.io-client, next-auth, @auth/core, bcrypt,
-   bcryptjs, jsonwebtoken, all @sanity/* packages, next-sanity, nodemailer.
-3. Create lib/supabase/ with a browser client and a server client module using @supabase/ssr
-   (read Supabase's current Next.js App Router SSR guidance). Read URL and keys from env. Fail loudly
-   if missing. Add a service-role server client for use ONLY inside app/api routes.
-4. Rewrite .env.example: remove MONGODB_URI, AUTH_* (NextAuth), JWT_SECRET, all SANITY_*,
+2. Create lib/supabase/ with: a browser client, a server client (using @supabase/ssr for cookie
+   sessions), and a service-role admin client for use ONLY inside app/api routes. Read URL/keys from
+   env; fail loudly if missing. (Read Supabase's current Next.js App Router SSR guidance.)
+3. Rewrite .env.example: remove MONGODB_URI, AUTH_* (NextAuth), JWT_SECRET, all SANITY_*,
    PULSE_BASE_URL, NEXT_PUBLIC_PULSE_BASE_URL, NEXT_PUBLIC_WS_BASE_URL. Add NEXT_PUBLIC_SUPABASE_URL,
-   NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, plus the retained GOOGLE_GENAI_API_KEY
-   and RESEND_API_KEY. Add comments for where to get each.
-5. Run pnpm tsc --noEmit and report what still references the removed packages.
+   NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, plus retained GOOGLE_GENAI_API_KEY and
+   RESEND_API_KEY. Comment where to get each.
+4. Grep every dead package for first-party import sites. Remove from package.json ONLY those with zero
+   imports (clean, no stubs). Leave the heavy/load-bearing ones (next-auth, mongoose, bcrypt,
+   jsonwebtoken, sanity/@sanity/*, next-sanity, socket.io-client) installed — they are removed in their
+   Phase 1 seam (§5.1–5.5) as the code that uses them is replaced.
+5. Run pnpm tsc --noEmit and report the dead-package references that remain (these become the Phase 1
+   re-wire worklist).
 ```
 
 **Phase 0 milestone:** branch created · deps pinned · ESLint/Prettier present · Supabase clients

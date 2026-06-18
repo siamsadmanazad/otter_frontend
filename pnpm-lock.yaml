@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@auth/core':
-        specifier: latest
-        version: 0.40.0(nodemailer@7.0.5)
       '@floating-ui/react':
         specifier: ^0.27.15
         version: 0.27.15(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
@@ -122,6 +119,12 @@ importers:
       '@sanity/vision':
         specifier: latest
         version: 3.97.1(@babel/runtime@7.27.6)(@codemirror/lint@6.8.5)(@codemirror/theme-one-dark@6.1.3)(@emotion/is-prop-valid@1.2.2)(codemirror@6.0.2)(react-dom@19.0.0(react@19.0.0))(react-is@18.3.1)(react@19.0.0)(styled-components@6.1.19(react-dom@19.0.0(react@19.0.0))(react@19.0.0))
+      '@supabase/ssr':
+        specifier: ^0.12.0
+        version: 0.12.0(@supabase/supabase-js@2.108.2)
+      '@supabase/supabase-js':
+        specifier: ^2.108.2
+        version: 2.108.2
       '@tanstack/react-query':
         specifier: ^5.83.0
         version: 5.83.0(react@19.0.0)
@@ -170,9 +173,6 @@ importers:
       bcrypt:
         specifier: ^6.0.0
         version: 6.0.0
-      bcryptjs:
-        specifier: latest
-        version: 3.0.2
       chart.js:
         specifier: ^4.5.0
         version: 4.5.0
@@ -220,7 +220,7 @@ importers:
         version: 15.2.4(@babel/core@7.28.0)(@playwright/test@1.61.0)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)(sass@1.90.0)
       next-auth:
         specifier: latest
-        version: 4.24.11(@auth/core@0.40.0(nodemailer@7.0.5))(next@15.2.4(@babel/core@7.28.0)(@playwright/test@1.61.0)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)(sass@1.90.0))(nodemailer@7.0.5)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
+        version: 4.24.11(next@15.2.4(@babel/core@7.28.0)(@playwright/test@1.61.0)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)(sass@1.90.0))(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
       next-sanity:
         specifier: latest
         version: 9.12.0(@emotion/is-prop-valid@1.2.2)(@sanity/client@7.6.0)(@sanity/icons@3.7.4(react@19.0.0))(@sanity/types@3.97.1(@types/react@19.0.0))(@sanity/ui@2.16.2(@emotion/is-prop-valid@1.2.2)(react-dom@19.0.0(react@19.0.0))(react-is@18.3.1)(react@19.0.0)(styled-components@6.1.19(react-dom@19.0.0(react@19.0.0))(react@19.0.0)))(next@15.2.4(@babel/core@7.28.0)(@playwright/test@1.61.0)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)(sass@1.90.0))(react-dom@19.0.0(react@19.0.0))(react-is@18.3.1)(react@19.0.0)(sanity@3.97.1(@emotion/is-prop-valid@1.2.2)(@types/node@22.0.0)(@types/react@19.0.0)(immer@10.1.1)(jiti@2.4.2)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)(sass@1.90.0)(styled-components@6.1.19(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(typescript@5.0.2)(yaml@2.8.0))(styled-components@6.1.19(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(typescript@5.0.2)
@@ -230,9 +230,6 @@ importers:
       nextjs-progressbar:
         specifier: ^0.0.16
         version: 0.0.16(next@15.2.4(@babel/core@7.28.0)(@playwright/test@1.61.0)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)(sass@1.90.0))(react@19.0.0)
-      nodemailer:
-        specifier: latest
-        version: 7.0.5
       nsfwjs:
         specifier: ^4.2.1
         version: 4.2.1(@tensorflow/tfjs@4.22.0(seedrandom@3.0.5))(buffer@6.0.3)
@@ -394,20 +391,6 @@ packages:
 
   '@asamuzakjp/dom-selector@2.0.2':
     resolution: {integrity: sha512-x1KXOatwofR6ZAYzXRBL5wrdV0vwNxlTCK9NCuLqAzQYARqGcvFwiJA6A1ERuh+dgeA4Dxm3JBYictIes+SqUQ==}
-
-  '@auth/core@0.40.0':
-    resolution: {integrity: sha512-n53uJE0RH5SqZ7N1xZoMKekbHfQgjd0sAEyUbE+IYJnmuQkbvuZnXItCU7d+i7Fj8VGOgqvNO7Mw4YfBTlZeQw==}
-    peerDependencies:
-      '@simplewebauthn/browser': ^9.0.1
-      '@simplewebauthn/server': ^9.0.2
-      nodemailer: ^6.8.0
-    peerDependenciesMeta:
-      '@simplewebauthn/browser':
-        optional: true
-      '@simplewebauthn/server':
-        optional: true
-      nodemailer:
-        optional: true
 
   '@aws-lite/client@0.21.10':
     resolution: {integrity: sha512-fOn3lg1ynBAxqcELRf084bNJ6gu+GGoNyC+hwitW/hg3Vc1z1ZbK5HWWTrDw8HdM/fEQ0UN++g7GXVN1GVctdQ==}
@@ -3139,6 +3122,38 @@ packages:
   '@standard-schema/utils@0.3.0':
     resolution: {integrity: sha512-e7Mew686owMaPJVNNLs55PUvgz371nKgwsc4vxE49zsODpJEnxgxRo2y/OKrqueavXgZNMDVj3DdHFlaSAeU8g==}
 
+  '@supabase/auth-js@2.108.2':
+    resolution: {integrity: sha512-tNaQmBgodDZwgB40mRwVbxFy8IDYwjdpcZ0BYrWiwlULCSQoJj4QoG4zgJT7QRPXcqipefNOzvO/qAu4dF98ag==}
+    engines: {node: '>=20.0.0'}
+
+  '@supabase/functions-js@2.108.2':
+    resolution: {integrity: sha512-RNUX8EiBy3iLwAX19jtRzLyePnl11/fHcgwDHLnpKcDSXt/5qBnh3LUwAtIjT21Q66QsmNUR2esrHziLCpNubw==}
+    engines: {node: '>=20.0.0'}
+
+  '@supabase/phoenix@0.4.4':
+    resolution: {integrity: sha512-Gt0pqoXuIqX/8dvG0OKp/wMCobXNH3klNbUPBNyOfN0YA1IswrM3HyWFMOPk1Jy+BRaIyDPcFx4jLBwHNmlyfQ==}
+
+  '@supabase/postgrest-js@2.108.2':
+    resolution: {integrity: sha512-GQ28/Y8hk3CFmkb3kXH1h/AQx6JIYSQfO0CJMRVBcEKZoNy6C45cXAZ4fcJvRC5Id0cs6xnkUV0+c0rIocigsw==}
+    engines: {node: '>=20.0.0'}
+
+  '@supabase/realtime-js@2.108.2':
+    resolution: {integrity: sha512-aAGxCSUemZvQIibnCdvNvgaKib28I4rfrNjKbQ9cG1uBLwUsI7hVpGXgEbypCCDhLjQlDTAiJlu7rgljYUT73g==}
+    engines: {node: '>=20.0.0'}
+
+  '@supabase/ssr@0.12.0':
+    resolution: {integrity: sha512-d9XV5XzJvzzZbeAIM7fWTCUYxQJZ2Ru6ny3dJHmHGp/LIrJ+o9FpD7N9Rf/UhhWEvHXSoDe8SI32Z2ouOdMjBg==}
+    peerDependencies:
+      '@supabase/supabase-js': ^2.108.0
+
+  '@supabase/storage-js@2.108.2':
+    resolution: {integrity: sha512-TVZPQxXGxY2+A6yTtm77zUHsh70lBhYUEaJL8RQC+BghcX/ygiMG/rmXrNVBce30/WAeNPa8FiG8HbqlGeV05g==}
+    engines: {node: '>=20.0.0'}
+
+  '@supabase/supabase-js@2.108.2':
+    resolution: {integrity: sha512-hFhnPveb5JQg4a0QYicM0swT253YHMdfeRAl2BKHOlI5VAzuHxUGSr8RbwNLYNPauWOgQMS1H8sz8bvYlgwUfQ==}
+    engines: {node: '>=20.0.0'}
+
   '@swc/counter@0.1.3':
     resolution: {integrity: sha512-e2BR4lsJkkRlKZ/qCHPw9ZaSxc0MVUd7gtbtaB7aMvHeJVYe8sOB8DBZkP2DtISHGSku9sCK6T6cnY0CtXrOCQ==}
 
@@ -4006,10 +4021,6 @@ packages:
     resolution: {integrity: sha512-cU8v/EGSrnH+HnxV2z0J7/blxH8gq7Xh2JFT6Aroax7UohdmiJJlxApMxtKfuI7z68NvvVcmR78k2LbT6efhRg==}
     engines: {node: '>= 18'}
 
-  bcryptjs@3.0.2:
-    resolution: {integrity: sha512-k38b3XOZKv60C4E2hVsXTolJWfkGRMbILBIe2IBITXciy5bOsTKot5kDrf3ZfufQtQOUN5mXceUEpU1rTl9Uog==}
-    hasBin: true
-
   before-after-hook@2.2.3:
     resolution: {integrity: sha512-NzUnlZexiaH/46WDhANlyR2bXRopNg4F/zuSA3OpZnllCUgRaOF2znDioDWrmbNVsuZk6l9pMquQB38cfBZwkQ==}
 
@@ -4302,6 +4313,10 @@ packages:
   cookie@0.7.2:
     resolution: {integrity: sha512-yki5XnKuf750l50uGTllt6kKILY4nQ1eNIQatoXEByZ5dWgnKqbnqmTrBE5B4N7lrMJKQ2ytWMiTO2o0v6Ew/w==}
     engines: {node: '>= 0.6'}
+
+  cookie@1.1.1:
+    resolution: {integrity: sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ==}
+    engines: {node: '>=18'}
 
   core-js-compat@3.43.0:
     resolution: {integrity: sha512-2GML2ZsCc5LR7hZYz4AXmjQw8zuy2T//2QntwdnpuYI7jteT6GVYJL7F6C2C57R7gSYrcqVW3lAALefdbhBLDA==}
@@ -5304,6 +5319,10 @@ packages:
   i18next@23.16.8:
     resolution: {integrity: sha512-06r/TitrM88Mg5FdUXAKL96dJMzgqLE5dv3ryBAra4KCwD9mJ4ndOTS95ZuymIGoE+2hzfdaMak2X11/es7ZWg==}
 
+  iceberg-js@0.8.1:
+    resolution: {integrity: sha512-1dhVQZXhcHje7798IVM+xoo/1ZdVfzOMIc8/rgVSijRK38EDqOJoGula9N/8ZI5RD8QTxNQtK/Gozpr+qUqRRA==}
+    engines: {node: '>=20.0.0'}
+
   iconv-lite@0.4.24:
     resolution: {integrity: sha512-v3MXnZAcvnywkTUEZomIActle7RXXeedOR31wwl7VlyoXO4Qi9arvSenNQWne1TcRwhCL1HwLI21bEqdpj8/rA==}
     engines: {node: '>=0.10.0'}
@@ -5641,9 +5660,6 @@ packages:
 
   jose@4.15.9:
     resolution: {integrity: sha512-1vUQX+IdDMVPj4k8kOxgUqlcK518yluMuGZwqlr44FS1ppZB/5GWh4rZG89erpOBOJjU/OBsnCVFfapsRz6nEA==}
-
-  jose@6.0.11:
-    resolution: {integrity: sha512-QxG7EaliDARm1O1S8BGakqncGT9s25bKL1WSf6/oa17Tkqwi8D2ZNglqCF+DsYF88/rV66Q/Q2mFAy697E1DUg==}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -6226,10 +6242,6 @@ packages:
   node-releases@2.0.19:
     resolution: {integrity: sha512-xxOWJsBKtzAq7DY0J+DTzuz58K8e7sJbdgwkbMWQe8UYB6ekmsQ45q0M/tJDsGaZmbC+l7n57UV8Hl5tHxO9uw==}
 
-  nodemailer@7.0.5:
-    resolution: {integrity: sha512-nsrh2lO3j4GkLLXoeEksAMgAOqxOv6QumNRVQTJwKH4nuiww6iC2y7GyANs9kRAxCexg3+lTWM3PZ91iLlVjfg==}
-    engines: {node: '>=6.0.0'}
-
   normalize-package-data@2.5.0:
     resolution: {integrity: sha512-/5CMN3T0R4XTj4DcGaexo+roZSdSFW/0AOOTROrjxzCG1wrWXEsGbRKevjlIL+ZDE4sZlJr5ED4YW0yqmkK+eA==}
 
@@ -6263,9 +6275,6 @@ packages:
 
   nwsapi@2.2.20:
     resolution: {integrity: sha512-/ieB+mDe4MrrKMT8z+mQL8klXydZWGR5Dowt4RAGKbJ3kIGEx3X4ljUo+6V73IXtUPWgfOlU5B9MlGxFO5T+cA==}
-
-  oauth4webapi@3.5.5:
-    resolution: {integrity: sha512-1K88D2GiAydGblHo39NBro5TebGXa+7tYoyIbxvqv3+haDDry7CBE1eSYuNbOSsYCCU6y0gdynVZAkm4YPw4hg==}
 
   oauth@0.9.15:
     resolution: {integrity: sha512-a5ERWK1kh38ExDEfoO6qUHJb32rd7aYmPHuyCu3Fta/cnICvYmgd2uhuKXvPD+PXB+gCEYYEaQdIRAjCOwAKNA==}
@@ -6629,11 +6638,6 @@ packages:
 
   preact-render-to-string@5.2.6:
     resolution: {integrity: sha512-JyhErpYOvBV1hEPwIxc/fHWXPfnEGdRKxc8gFdAZ7XV4tlzyzG847XAyEZqoDnynP88akM4eaHcSOzNcLWFguw==}
-    peerDependencies:
-      preact: '>=10'
-
-  preact-render-to-string@6.5.11:
-    resolution: {integrity: sha512-ubnauqoGczeGISiOh6RjX0/cdaF8v/oDXIjO85XALCQjwQP+SB4RDXXtvZ6yTYSjG+PC1QRP2AhPgCEsM2EvUw==}
     peerDependencies:
       preact: '>=10'
 
@@ -8209,16 +8213,6 @@ snapshots:
       bidi-js: 1.0.3
       css-tree: 2.3.1
       is-potential-custom-element-name: 1.0.1
-
-  '@auth/core@0.40.0(nodemailer@7.0.5)':
-    dependencies:
-      '@panva/hkdf': 1.2.1
-      jose: 6.0.11
-      oauth4webapi: 3.5.5
-      preact: 10.24.3
-      preact-render-to-string: 6.5.11(preact@10.24.3)
-    optionalDependencies:
-      nodemailer: 7.0.5
 
   '@aws-lite/client@0.21.10':
     dependencies:
@@ -11238,6 +11232,43 @@ snapshots:
 
   '@standard-schema/utils@0.3.0': {}
 
+  '@supabase/auth-js@2.108.2':
+    dependencies:
+      tslib: 2.8.1
+
+  '@supabase/functions-js@2.108.2':
+    dependencies:
+      tslib: 2.8.1
+
+  '@supabase/phoenix@0.4.4': {}
+
+  '@supabase/postgrest-js@2.108.2':
+    dependencies:
+      tslib: 2.8.1
+
+  '@supabase/realtime-js@2.108.2':
+    dependencies:
+      '@supabase/phoenix': 0.4.4
+      tslib: 2.8.1
+
+  '@supabase/ssr@0.12.0(@supabase/supabase-js@2.108.2)':
+    dependencies:
+      '@supabase/supabase-js': 2.108.2
+      cookie: 1.1.1
+
+  '@supabase/storage-js@2.108.2':
+    dependencies:
+      iceberg-js: 0.8.1
+      tslib: 2.8.1
+
+  '@supabase/supabase-js@2.108.2':
+    dependencies:
+      '@supabase/auth-js': 2.108.2
+      '@supabase/functions-js': 2.108.2
+      '@supabase/postgrest-js': 2.108.2
+      '@supabase/realtime-js': 2.108.2
+      '@supabase/storage-js': 2.108.2
+
   '@swc/counter@0.1.3': {}
 
   '@swc/helpers@0.5.15':
@@ -12186,8 +12217,6 @@ snapshots:
       node-addon-api: 8.4.0
       node-gyp-build: 4.8.4
 
-  bcryptjs@3.0.2: {}
-
   before-after-hook@2.2.3: {}
 
   bidi-js@1.0.3:
@@ -12503,6 +12532,8 @@ snapshots:
   convert-source-map@2.0.0: {}
 
   cookie@0.7.2: {}
+
+  cookie@1.1.1: {}
 
   core-js-compat@3.43.0:
     dependencies:
@@ -13001,8 +13032,8 @@ snapshots:
       '@typescript-eslint/parser': 8.61.1(eslint@8.57.1)(typescript@5.0.2)
       eslint: 8.57.1
       eslint-import-resolver-node: 0.3.10
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@8.57.1)
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1)
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint@8.57.1))(eslint@8.57.1)
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint@8.57.1))(eslint@8.57.1))(eslint@8.57.1)
       eslint-plugin-jsx-a11y: 6.10.2(eslint@8.57.1)
       eslint-plugin-react: 7.37.5(eslint@8.57.1)
       eslint-plugin-react-hooks: 5.2.0(eslint@8.57.1)
@@ -13021,7 +13052,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0)(eslint@8.57.1):
+  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint@8.57.1))(eslint@8.57.1):
     dependencies:
       '@nolyfill/is-core-module': 1.0.39
       debug: 4.4.1(supports-color@8.1.1)
@@ -13032,22 +13063,22 @@ snapshots:
       tinyglobby: 0.2.14
       unrs-resolver: 1.12.2
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1)
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint@8.57.1))(eslint@8.57.1))(eslint@8.57.1)
     transitivePeerDependencies:
       - supports-color
 
-  eslint-module-utils@2.13.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1):
+  eslint-module-utils@2.13.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint@8.57.1))(eslint@8.57.1))(eslint@8.57.1):
     dependencies:
       debug: 3.2.7
     optionalDependencies:
       '@typescript-eslint/parser': 8.61.1(eslint@8.57.1)(typescript@5.0.2)
       eslint: 8.57.1
       eslint-import-resolver-node: 0.3.10
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@8.57.1)
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint@8.57.1))(eslint@8.57.1)
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint@8.57.1))(eslint@8.57.1))(eslint@8.57.1):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.9
@@ -13058,7 +13089,7 @@ snapshots:
       doctrine: 2.1.0
       eslint: 8.57.1
       eslint-import-resolver-node: 0.3.10
-      eslint-module-utils: 2.13.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1)
+      eslint-module-utils: 2.13.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.61.1(eslint@8.57.1)(typescript@5.0.2))(eslint@8.57.1))(eslint@8.57.1))(eslint@8.57.1)
       hasown: 2.0.2
       is-core-module: 2.16.1
       is-glob: 4.0.3
@@ -13733,6 +13764,8 @@ snapshots:
     dependencies:
       '@babel/runtime': 7.27.6
 
+  iceberg-js@0.8.1: {}
+
   iconv-lite@0.4.24:
     dependencies:
       safer-buffer: 2.1.2
@@ -14034,8 +14067,6 @@ snapshots:
   jiti@2.4.2: {}
 
   jose@4.15.9: {}
-
-  jose@6.0.11: {}
 
   js-tokens@4.0.0: {}
 
@@ -14516,7 +14547,7 @@ snapshots:
 
   natural-compare@1.4.0: {}
 
-  next-auth@4.24.11(@auth/core@0.40.0(nodemailer@7.0.5))(next@15.2.4(@babel/core@7.28.0)(@playwright/test@1.61.0)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)(sass@1.90.0))(nodemailer@7.0.5)(react-dom@19.0.0(react@19.0.0))(react@19.0.0):
+  next-auth@4.24.11(next@15.2.4(@babel/core@7.28.0)(@playwright/test@1.61.0)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)(sass@1.90.0))(react-dom@19.0.0(react@19.0.0))(react@19.0.0):
     dependencies:
       '@babel/runtime': 7.27.6
       '@panva/hkdf': 1.2.1
@@ -14530,9 +14561,6 @@ snapshots:
       react: 19.0.0
       react-dom: 19.0.0(react@19.0.0)
       uuid: 8.3.2
-    optionalDependencies:
-      '@auth/core': 0.40.0(nodemailer@7.0.5)
-      nodemailer: 7.0.5
 
   next-sanity@9.12.0(@emotion/is-prop-valid@1.2.2)(@sanity/client@7.6.0)(@sanity/icons@3.7.4(react@19.0.0))(@sanity/types@3.97.1(@types/react@19.0.0))(@sanity/ui@2.16.2(@emotion/is-prop-valid@1.2.2)(react-dom@19.0.0(react@19.0.0))(react-is@18.3.1)(react@19.0.0)(styled-components@6.1.19(react-dom@19.0.0(react@19.0.0))(react@19.0.0)))(next@15.2.4(@babel/core@7.28.0)(@playwright/test@1.61.0)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)(sass@1.90.0))(react-dom@19.0.0(react@19.0.0))(react-is@18.3.1)(react@19.0.0)(sanity@3.97.1(@emotion/is-prop-valid@1.2.2)(@types/node@22.0.0)(@types/react@19.0.0)(immer@10.1.1)(jiti@2.4.2)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)(sass@1.90.0)(styled-components@6.1.19(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(typescript@5.0.2)(yaml@2.8.0))(styled-components@6.1.19(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(typescript@5.0.2):
     dependencies:
@@ -14631,8 +14659,6 @@ snapshots:
 
   node-releases@2.0.19: {}
 
-  nodemailer@7.0.5: {}
-
   normalize-package-data@2.5.0:
     dependencies:
       hosted-git-info: 2.8.9
@@ -14667,8 +14693,6 @@ snapshots:
       boolbase: 1.0.0
 
   nwsapi@2.2.20: {}
-
-  oauth4webapi@3.5.5: {}
 
   oauth@0.9.15: {}
 
@@ -15033,10 +15057,6 @@ snapshots:
     dependencies:
       preact: 10.24.3
       pretty-format: 3.8.0
-
-  preact-render-to-string@6.5.11(preact@10.24.3):
-    dependencies:
-      preact: 10.24.3
 
   preact@10.24.3: {}
 

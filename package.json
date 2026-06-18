@@ -14,7 +14,6 @@
     "test:visual:update": "playwright test --update-snapshots"
   },
   "dependencies": {
-    "@auth/core": "latest",
     "@floating-ui/react": "^0.27.15",
     "@google/genai": "^1.9.0",
     "@hookform/resolvers": "^5.1.1",
@@ -52,6 +51,8 @@
     "@sanity/types": "latest",
     "@sanity/ui": "latest",
     "@sanity/vision": "latest",
+    "@supabase/ssr": "^0.12.0",
+    "@supabase/supabase-js": "^2.108.2",
     "@tanstack/react-query": "^5.83.0",
     "@tiptap/extension-highlight": "^3.0.9",
     "@tiptap/extension-horizontal-rule": "^3.0.9",
@@ -68,7 +69,6 @@
     "autoprefixer": "^10.4.20",
     "axios": "^1.10.0",
     "bcrypt": "^6.0.0",
-    "bcryptjs": "latest",
     "chart.js": "^4.5.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -88,7 +88,6 @@
     "next-sanity": "latest",
     "next-themes": "^0.4.6",
     "nextjs-progressbar": "^0.0.16",
-    "nodemailer": "latest",
     "nsfwjs": "^4.2.1",
     "react": "^19",
     "react-chartjs-2": "^5.3.0",
