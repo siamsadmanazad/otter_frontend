@@ -12,6 +12,36 @@ export function fail(message: string, status = 500, data: unknown = null) {
   return NextResponse.json({ message, status, data }, { status });
 }
 
+/** Map a tribes row (snake_case) to the camelCase tribe shape the UI expects (ITribe). */
+export function mapTribe(t: Record<string, any> | null) {
+  if (!t) return null;
+  return {
+    id: t.id,
+    serial: t.serial,
+    name: t.name,
+    description: t.description,
+    category: t.category,
+    tags: t.tags ?? [],
+    coverImage: t.cover_image,
+    profileImage: t.profile_image,
+    privacy: t.privacy,
+    createdBy: t.created_by,
+    createdAt: t.created_at,
+    updatedAt: t.updated_at,
+  };
+}
+
+/** Map a profiles row (snake_case) to a compact public user shape. */
+export function mapPublicUser(u: Record<string, any> | null) {
+  if (!u) return null;
+  return {
+    id: u.id,
+    username: u.username,
+    fullName: u.full_name,
+    profileImage: u.profile_image,
+  };
+}
+
 /** Map a profiles row (snake_case) to the camelCase user shape the UI expects. */
 export function mapProfile(p: Record<string, unknown> | null) {
   if (!p) return null;

@@ -1,10 +1,6 @@
-import { authOptions } from "@/auth";
-import { getServerSession } from "next-auth";
 import { NextRequest } from "next/server";
-import { isMemberOfTribe, joinTribe } from "../tribe.action";
-import { runDBOperation } from "@/lib/useDB";
-import tribesSchema from "@/utils/schema/tribes-schema";
-import RateLimiter_Middleware from "@/lib/rate-limiter.middleware";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { ok, fail, mapTribe } from "@/lib/api/http";
 
 export interface IPayloadProps {
   privacy?: string;
@@ -12,106 +8,46 @@ export interface IPayloadProps {
   tags?: string[];
 }
 
-function searchFilter(payload: IPayloadProps) {
-  let searchPayload: { [key: string]: any } = {
-    privacy: payload.privacy ?? null,
-    category: payload.category ?? null,
-    tags: payload.tags ?? null,
+const TRIBE_COLS =
+  "id, serial, name, description, category, tags, cover_image, profile_image, created_by, privacy, created_at, updated_at";
+
+async function searchTribes(searchText: string | null, payload: IPayloadProps) {
+  const db = createAdminClient();
+  let q = db.from("tribes").select(TRIBE_COLS).order("created_at", { ascending: false }).limit(50);
+
+  if (searchText && searchText.trim()) q = q.ilike("name", `%${searchText}%`);
+  if (payload.privacy) q = q.eq("privacy", payload.privacy);
+  if (payload.category && payload.category !== "NONE" && payload.category !== "") {
+    q = q.eq("category", payload.category);
   }
-  Object.keys(searchPayload).forEach(key => {
-    if (searchPayload[key] === null) {
-      delete searchPayload[key];
-    }
-    if(searchPayload.tags) {
-      if(searchPayload.tags.length === 0){
-        delete searchPayload['tags'];
-      }
-    }
-    if(searchPayload.category === null || searchPayload.category === 'NONE' || searchPayload.category === '') {
-      delete searchPayload['category'];
-    }
-  });
-  return searchPayload;
+  if (payload.tags && payload.tags.length > 0) q = q.overlaps("tags", payload.tags);
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []).map(mapTribe);
 }
 
-
-export async function GET(request: NextRequest) {
-  const serverSession = await getServerSession(authOptions);
-  const searchParams = request.nextUrl.searchParams;
-  //const requestType = searchParams.get("requestType");
-  const searchText = searchParams.get("searchText");
-  const payload = await request.json();
-  const searchPayload = searchFilter(payload);
-
-  // if (serverSession?.user?.id) {
-    const operation = await runDBOperation(async()=>{
-      const searchAndFilterTribes = 
-      await tribesSchema.find( 
-        {
-          ...searchPayload, 
-          name: { $regex: searchText, $options: 'i' } 
-        } );
-      return searchAndFilterTribes;
-    })
-    return Response.json({
-      message: "get searched tribes",
-      status: 200,
-      data: operation,
-    })
-  //}
-
-  // return Response.json({
-  //   message: "get tribe members",
-  //   status: 200,
-  //   method: request.method,
-  // });
+// POST /api/tribe/search?searchText=  body { privacy?, category?, tags? }
+export async function POST(request: NextRequest): Promise<Response> {
+  try {
+    const searchText = request.nextUrl.searchParams.get("searchText");
+    const payload = (await request.json().catch(() => ({}))) as IPayloadProps;
+    const tribes = await searchTribes(searchText, payload);
+    return ok(tribes, "get searched tribes");
+  } catch (e) {
+    console.error("POST /api/tribe/search error:", e);
+    return fail("Internal server error", 500);
+  }
 }
 
-export async function POST(request: NextRequest) {
-  await RateLimiter_Middleware(request);
-  const serverSession = await getServerSession(authOptions);
-  const searchParams = request.nextUrl.searchParams;
-  //const requestType = searchParams.get("requestType");
-  const searchText = searchParams.get("searchText");
-  const payload = await request.json();
-  const searchPayload = searchFilter(payload);
-
-  // if (serverSession?.user?.id) {
-    const operation = await runDBOperation(async()=>{
-      console.log(searchPayload, searchText);
-      const searchAndFilterTribes = 
-      await tribesSchema.find( 
-        {
-          ...searchPayload, 
-          name: { $regex: searchText, $options: 'i' } 
-        })
-        .select("-users -posts -updatedAt")
-        .lean()
-        .exec();
-      return searchAndFilterTribes;
-    })
-    return Response.json({
-      message: "get searched tribes",
-      status: 200,
-      data: operation,
-    })
-  // }
-
-  // return Response.json({
-  //   message: "unauthorized error",
-  //   status: 200,
-  //   method: request.method,
-  // });
-}
-
-export async function OPTIONS(request: Request) {
-  return new Response(null, {
-    status: 200,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Max-Age": "86400",
-    },
-  });
+// GET /api/tribe/search?searchText=  (no filter body)
+export async function GET(request: NextRequest): Promise<Response> {
+  try {
+    const searchText = request.nextUrl.searchParams.get("searchText");
+    const tribes = await searchTribes(searchText, {});
+    return ok(tribes, "get searched tribes");
+  } catch (e) {
+    console.error("GET /api/tribe/search error:", e);
+    return fail("Internal server error", 500);
+  }
 }
