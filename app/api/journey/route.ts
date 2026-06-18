@@ -1,37 +1,29 @@
-import { authOptions } from "@/auth";
-import { getServerSession } from "next-auth";
 import { NextRequest } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getServerUser } from "@/lib/auth/server";
+import { ok, fail } from "@/lib/api/http";
 
-export async function GET(request: NextRequest) {
-  const serverSession = await getServerSession(authOptions);
-  const searchParams = request.nextUrl.searchParams;
-  const profileId = searchParams.get("id");
-  if (serverSession?.user?.id) {
-    // do something
+// GET /api/journey?id=<ownerId> -> that user's JOURNAL posts (journals are posts with post_type=JOURNAL)
+export async function GET(request: NextRequest): Promise<Response> {
+  const user = await getServerUser(request);
+  if (!user) return fail("Unauthorized", 401);
+  try {
+    const ownerId = request.nextUrl.searchParams.get("id") || user.id;
+    const db = createAdminClient();
+    const { data } = await db
+      .from("posts")
+      .select("id")
+      .eq("owner_id", ownerId)
+      .eq("post_type", "JOURNAL")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    const ids = ((data ?? []) as { id: string }[]).map((r) => r.id);
+    const journals = await Promise.all(
+      ids.map(async (id) => (await db.rpc("build_post_json", { p_post_id: id })).data)
+    );
+    return ok(journals.filter(Boolean), "get journals");
+  } catch (e) {
+    console.error("GET /api/journey error:", e);
+    return fail("Internal server error", 500);
   }
-  return Response.json({
-    message: "get journals",
-    status: 200,
-    method: request.method,
-  });
-}
-
-export async function POST(request: Request) {
-  return Response.json({
-    message: "create journals",
-    status: 200,
-    method: request.method,
-  });
-}
-
-export async function OPTIONS(request: Request) {
-  return new Response(null, {
-    status: 200,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Max-Age": "86400",
-    },
-  });
 }
