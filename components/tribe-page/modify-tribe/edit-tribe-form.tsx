@@ -30,7 +30,7 @@ import {
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTribeAPI } from "@/lib/requests";
 import { ImageDropzone, uploadImage } from "@/lib/imageUpload.utils";

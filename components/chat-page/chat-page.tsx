@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { MessageSquare, Send } from "lucide-react";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 
 // Import the new custom hook and components
 import { useChatLogic } from "./useChatLogic";

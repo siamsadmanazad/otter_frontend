@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { Loading } from "@/components/ui/loading";
 import { useFeedAPI } from "@/lib/requests";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";

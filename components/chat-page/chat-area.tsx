@@ -14,7 +14,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { IMessage, IUser, Group } from "@/types/chat.d";
-import { Session } from "next-auth";
+import type { Session } from "@/lib/auth/session";
 
 interface ChatAreaProps {
   selectedChatType: "private" | "group" | "global" | null;

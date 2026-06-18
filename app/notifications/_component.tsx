@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useWebsocket } from "@/lib/useWebsocket";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 import { Card } from "@/components/ui/card";
 
 import dayjs from "dayjs";

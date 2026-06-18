@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Session } from "next-auth"; // Import Session type
+import type { Session } from "@/lib/auth/session"; // Import Session type
 
 interface ChatListHeaderProps {
   socketStatus: string;

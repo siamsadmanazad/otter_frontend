@@ -2,7 +2,7 @@
 
 import { useTribeAPI } from "@/lib/requests";
 import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 
 export function JoinedTribes() {
   const {data: session} = useSession();

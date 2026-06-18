@@ -16,7 +16,7 @@ import {
   Users,
   MessageSquare,
 } from "lucide-react";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 import { useWebsocket } from "@/lib/useWebsocket";
 import type { IDisplayConversation, IMessage, IUser } from "@/types/chat.d";
 

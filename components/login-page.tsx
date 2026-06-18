@@ -20,7 +20,7 @@ import { Eye, EyeOff, Mail, Lock, Camera } from "lucide-react";
 import { toast } from "sonner";
 import { loginSchema } from "@/utils/models/signin.model";
 import type { IErrorProps } from "@/types/error";
-import { signIn, useSession } from "next-auth/react";
+import { signIn, useSession } from "@/lib/auth/session";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { GoogleIcon } from "./ui/icons/google";

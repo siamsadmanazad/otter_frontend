@@ -28,7 +28,7 @@ import {
   type PostCreateInput,
   type CreatePostFormProps,
 } from "@/utils/models/post.model";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 import { DialogTitle } from "@radix-ui/react-dialog";
 import { usePostApi } from "@/lib/requests";
 import { getSanityMedia } from "@/lib/getSanityImage";

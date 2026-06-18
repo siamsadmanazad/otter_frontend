@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Home, Users, ShoppingBag, Settings, LogOut, LoaderPinwheel } from "lucide-react";
-import { signOut } from "next-auth/react";
+import { signOut } from "@/lib/auth/session";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";

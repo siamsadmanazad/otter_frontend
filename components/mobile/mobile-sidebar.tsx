@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { signOut } from "next-auth/react";
+import { signOut } from "@/lib/auth/session";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 

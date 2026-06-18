@@ -1,6 +1,6 @@
 "use client";
 
-import { SessionProvider } from "next-auth/react";
+import { SessionProvider } from "@/lib/auth/session";
 import NextNProgress from "nextjs-progressbar";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { FeedbackFormContainer } from "@/components/feedback-container";

@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useWebsocket } from "@/lib/useWebsocket";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 import Link from "next/link";
 import { MessageCircle } from "lucide-react";
 

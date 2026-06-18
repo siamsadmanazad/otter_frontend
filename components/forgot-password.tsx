@@ -18,7 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Mail, Camera } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
-import { useResetPasswordAPI } from "@/lib/requests";
+import { createClient } from "@/lib/supabase/browser";
 
 // Define Zod schema for email input
 const emailSchema = z.object({
@@ -42,19 +42,16 @@ export function ForgotPasswordPage() {
   const handleEmailSubmit = async (data: EmailFormValues) => {
     setIsLoading(true);
     setUserEmail(data.email);
-    // Simulate API call to send verification email
-    const response = await useResetPasswordAPI.createEmail({
-      email: data.email,
-      reason: "PASSWORD_RESET",
+    const supabase = createClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
+      redirectTo: `${window.location.origin}/auth/callback?next=/verify/recovery`,
     });
-    if (response.status === 200) {
+    // Always show the same confirmation (don't reveal whether the email exists).
+    if (!error) {
       toast.success(`Verification email sent to ${data.email}`);
-      setCurrentStep(2);
-      setIsLoading(false);
-    } else {
-      toast.error("Failed to send verification email, try again?");
-      setIsLoading(false);
     }
+    setCurrentStep(2);
+    setIsLoading(false);
   };
 
   return (

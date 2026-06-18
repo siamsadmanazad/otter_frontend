@@ -19,7 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 import { toast } from "sonner";
 import { useReportApi } from "@/lib/requests";
 

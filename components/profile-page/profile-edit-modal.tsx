@@ -81,7 +81,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Badge } from "../ui/badge";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 import { Loading } from "../ui/loading";
 
 export function ProfileEditForm({ type, defaultData, onClose }: ProfileEditFormProps) {

@@ -2,7 +2,7 @@
 
 import { useFollowApi } from "@/lib/requests";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useWebsocket } from "@/lib/useWebsocket";

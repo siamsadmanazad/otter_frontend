@@ -19,9 +19,8 @@ import { Lock } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import axios from "axios";
 import { LoadingSmall } from "@/components/ui/loading";
-import { useResetPasswordAPI } from "@/lib/requests";
+import { createClient } from "@/lib/supabase/browser";
 
 const resetPasswordSchema = z
   .object({
@@ -47,18 +46,31 @@ export function ResetPasswordPage({ id }: ResetPasswordPageProps) {
   const router = useRouter();
 
   useEffect(() => {
-    async function fetchData(id: string) {
-      const response = await axios.get(`/api/auth/verification?id=${id}`);
-      setUserData(response.data.data);
-      if (response.data.status === 400) {
+    const supabase = createClient();
+    async function loadRecoveryUser() {
+      // The recovery email link routes through /auth/callback, which sets a session cookie.
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("Reset link is invalid or expired. Please request a new one.");
         router.push("/login");
-        toast.error(
-          "Please try again with a new valid token to reset password"
-        );
+        return;
       }
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name, location, profile_image, email")
+        .eq("id", user.id)
+        .single();
+      setUserData({
+        fullName: profile?.full_name ?? "",
+        location: profile?.location ?? "",
+        image: profile?.profile_image ?? null,
+        email: profile?.email ?? user.email,
+      });
     }
-    fetchData(id);
-  }, []);
+    loadRecoveryUser();
+  }, [router]);
 
   const resetPasswordForm = useForm<ResetPasswordFormValues>({
     resolver: zodResolver(resetPasswordSchema),
@@ -72,11 +84,13 @@ export function ResetPasswordPage({ id }: ResetPasswordPageProps) {
     setIsLoading(true);
 
     try {
-      const response = await useResetPasswordAPI.changePassword(
-        userData?.email,
-        data.newPassword
-      );
+      const supabase = createClient();
+      const { error } = await supabase.auth.updateUser({
+        password: data.newPassword,
+      });
+      if (error) throw error;
 
+      await supabase.auth.signOut();
       toast.success("Password has been reset successfully!");
       router.push("/login");
     } catch (error) {

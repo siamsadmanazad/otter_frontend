@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { MessageSquare, Users } from "lucide-react";
 import { IDisplayConversation } from "@/types/chat.d";
 import { ChatListHeader } from "./chatlist-header";
-import { Session } from "next-auth";
+import type { Session } from "@/lib/auth/session";
 
 interface ChatListProps {
   selectedChatId: string | null;

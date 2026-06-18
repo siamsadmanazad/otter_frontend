@@ -29,7 +29,7 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 dayjs.extend(relativeTime);
 
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 
 import { useFollowApi, useUserApi } from "@/lib/requests";
 import PostContainer from "@/components/feed/profile";

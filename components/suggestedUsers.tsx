@@ -2,7 +2,7 @@
 
 import { useCompanionAPI } from "@/lib/requests";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { useEffect, useRef } from "react";

@@ -35,7 +35,7 @@ import { useDropzone } from "react-dropzone";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import * as nsfwjs from "nsfwjs";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 import { getSanityMedia } from "@/lib/getSanityImage";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTribeAPI } from "@/lib/requests";
