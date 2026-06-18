@@ -1,45 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPublicFeed, getPublicFeed_v2 } from "./feed.action";
+import { createAdminClient } from "@/lib/supabase/admin";
 
+// GET /api/feed?id=<viewerId>&page=&limit= -> personalized feed (public fallback) via get_feed_v2 RPC
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const profileId = searchParams.get("id");
-  const versionId = searchParams.get("versionId");
-
-  const page = parseInt(searchParams.get("page") || "1", 10);
-  const limit = parseInt(searchParams.get("limit") || "10", 10);
-  const skip = (page - 1) * limit;
+  const sp = request.nextUrl.searchParams;
+  const profileId = sp.get("id");
+  const page = parseInt(sp.get("page") || "1", 10);
+  const limit = parseInt(sp.get("limit") || "10", 10);
 
   try {
+    const db = createAdminClient();
+    const { data, error } = await db.rpc("get_feed_v2", {
+      p_viewer: profileId || null,
+      p_page: page,
+      p_limit: limit,
+    });
+    if (error) throw error;
 
-    ////////////////////////////////////////////////////////////////////////
-    /* v2 testing, requires profileId and versionId to be set */
-    if(versionId === "v2") {
-      try {
-        const dummy = await getPublicFeed_v2(skip, limit, profileId ?? "");
-        console.log(dummy, "dummy");
-      } catch(err) {
-        console.log(err, "the heck");
-      }
-      const posts = {}
-      const totalPosts = {}
-      return NextResponse.json({
-        message: "Received v2 feed data",
-        status: 200,
-        data: posts,
-        pagination: {
-          currentPage: page,
-          postsPerPage: limit,
-          totalPosts: totalPosts,
-          totalPages: 10, /* Math.ceil(totalPosts / limit) */
-          hasMore: true, /* page * limit < totalPosts */
-        },
-      });
-    }
-    ////////////////////////////////////////////////////////////////////////
-
-    const { posts, totalPosts } = await getPublicFeed(skip, limit);
-
+    const posts = (data as unknown[]) ?? [];
     return NextResponse.json({
       message: "Received feed data",
       status: 200,
@@ -47,38 +25,18 @@ export async function GET(request: NextRequest) {
       pagination: {
         currentPage: page,
         postsPerPage: limit,
-        totalPosts: totalPosts,
-        totalPages: Math.ceil(totalPosts / limit),
-        hasMore: page * limit < totalPosts,
+        totalPosts: posts.length,
+        totalPages: page + (posts.length === limit ? 1 : 0),
+        hasMore: posts.length === limit,
       },
     });
   } catch (err) {
-    console.error("Error fetching posts:", err);
+    console.error("Error fetching feed:", err);
     return NextResponse.json({
-      message: `Failed to load posts: ${
-        err instanceof Error ? err.message : "Unknown error"
-      }`,
+      message: `Failed to load posts: ${err instanceof Error ? err.message : "Unknown error"}`,
       status: 500,
       data: [],
-      pagination: {
-        currentPage: 1,
-        postsPerPage: limit,
-        totalPosts: 0,
-        totalPages: 0,
-        hasMore: false,
-      },
+      pagination: { currentPage: 1, postsPerPage: limit, totalPosts: 0, totalPages: 0, hasMore: false },
     });
   }
-}
-
-export async function OPTIONS(request: Request) {
-  return new Response(null, {
-    status: 200,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Max-Age": "86400",
-    },
-  });
 }

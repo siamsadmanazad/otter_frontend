@@ -40,3 +40,19 @@ export async function createClient() {
     },
   });
 }
+
+/**
+ * A Supabase client that acts AS THE CALLER so RLS + auth.uid() resolve correctly inside
+ * SECURITY DEFINER RPCs (toggle_like/toggle_follow/join_or_leave_tribe). Web uses the cookie session;
+ * a Bearer token (Flutter) is honored too. Use this for user-action RPCs (not the service-role admin).
+ */
+export async function createActorClient(req?: Request) {
+  const authz = req?.headers.get("authorization") ?? req?.headers.get("Authorization");
+  if (authz?.startsWith("Bearer ")) {
+    return createServerClient(url!, anonKey!, {
+      global: { headers: { Authorization: authz } },
+      cookies: { getAll: () => [], setAll: () => {} },
+    });
+  }
+  return createClient();
+}
