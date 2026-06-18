@@ -164,7 +164,7 @@ export function SearchModal({
 
       const newFilteredResults: FilteredResults = {
         people: (apiData.users || []).map((user: any) => ({
-          id: user._id,
+          id: user.id,
           username: user.username,
           name: user.fullName,
           avatar: user.profileImage || "/placeholder.svg",
@@ -181,7 +181,7 @@ export function SearchModal({
         // })),
         hashtags: (apiData.hashtags || []).flatMap((post: any) =>
           post.hashtags.map((tag: string) => ({
-            id: post._id + tag,
+            id: post.id + tag,
             tag: tag,
             count: 0,
           }))
