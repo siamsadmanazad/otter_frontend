@@ -3,12 +3,17 @@ import { createActorClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
+import { enforceRateLimit } from "@/lib/ratelimit";
 
 // POST /api/reaction  body { post } -> toggle like -> { isLiked, likeCount, likeId }
 export async function POST(request: NextRequest): Promise<Response> {
   try {
     const user = await getServerUser(request);
     if (!user) return fail("Unauthorized", 401);
+
+    // Anti-spam on like toggling: max 30 / 60s per user.
+    const limited = await enforceRateLimit("reaction", user.id, request, 30, 60);
+    if (limited) return limited;
 
     const body = await request.json();
     const postId: string | undefined = body.post ?? body.postId;
