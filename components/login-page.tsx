@@ -27,24 +27,6 @@ import { GoogleIcon } from "./ui/icons/google";
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-function DemoLoginButton() {
-  const handleDemoLogin = () => {
-    form.setValue("email", "test@user.com");
-    form.setValue("password", "Abcd1234..");
-  };
-  return (
-    <div className="text-center space-y-2">
-      <Button
-        onClick={handleDemoLogin}
-        variant="ghost"
-        className="text-sm font-bold text-white hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-gray-700 bg-gradient-to-br from-[#0099DB] to-[#00F0E4]"
-      >
-        Try Demo Account / I'm Feeling Lucky
-      </Button>
-    </div>
-  )
-}
-
 export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
