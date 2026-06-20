@@ -64,17 +64,17 @@ export default function TribesPage_V101() {
     },
   });
   return (
-    <div>
-      <div className="flex flex-col md:flex-row justify-between items-center mb-8">
+    <div className="px-4 md:px-6 py-4">
+      <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8">
         <div>
-          <h1 className="text-4xl font-bold">Tribes</h1>
+          <h1 className="text-3xl md:text-4xl font-bold">Tribes</h1>
         </div>
         <TribesPage_Header_V2 />
       </div>
 
-      <div className="w-[500px] bg-slate-200/70 rounded-full p-2 flex flex-row gap-1 mb-6">
+      <div className="w-full max-w-[500px] overflow-x-auto bg-slate-200/70 rounded-full p-2 flex flex-row gap-1 mb-6">
         <Button
-          className="rounded-full"
+          className="rounded-full shrink-0 whitespace-nowrap"
           variant={sectionsOrder[0] === "created" ? "default" : "outline"}
           onClick={() => bringSectionToFront("created")}
         >
@@ -82,7 +82,7 @@ export default function TribesPage_V101() {
           Created Tribes
         </Button>
         <Button
-          className="rounded-full"
+          className="rounded-full shrink-0 whitespace-nowrap"
           variant={sectionsOrder[0] === "public" ? "default" : "outline"}
           onClick={() => bringSectionToFront("public")}
         >
@@ -90,7 +90,7 @@ export default function TribesPage_V101() {
           Public
         </Button>
         <Button
-          className="rounded-full"
+          className="rounded-full shrink-0 whitespace-nowrap"
           variant={sectionsOrder[0] === "private" ? "default" : "outline"}
           onClick={() => bringSectionToFront("private")}
         >
@@ -98,7 +98,7 @@ export default function TribesPage_V101() {
           Private
         </Button>
         <Button
-          className="rounded-full"
+          className="rounded-full shrink-0 whitespace-nowrap"
           variant={sectionsOrder[0] === "suggested" ? "default" : "outline"}
           onClick={() => bringSectionToFront("suggested")}
         >
