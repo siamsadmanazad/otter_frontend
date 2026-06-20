@@ -226,4 +226,11 @@ Web steps W1→W9 are sequential; Flutter F0→F6 can begin once W1 confirms the
   `preferences jsonb`. Per project rule, applying to the hosted Supabase needs user approval. Options: (a) add migration +
   push to hosted now, (b) build migration local-only + defer hosted apply, (c) skip W5, do **W6 chat** next (chat tables already
   exist → no new DB). Awaiting user.
-- **W1 (browser smoke) still pending** — needs the dev server (`! pnpm dev` against hosted); will verify W3 + W4 + the core loop.
+- 2026-06-20 — **W6a Chat backend DONE.** Routes (conversations list/create-direct, messages fetch/send, read, soft-delete)
+  + `ChatAPI`/`useChatApi` on the existing schema; admin client + participant checks. Typecheck-clean, 0 new errors. Commit `51ac1b5`.
+- **W6b Chat UI rewire = the next big piece** (and best done against a live browser): rewire `useChatLogic`/`chat-page`/`chat-area`/
+  `chat-list` from the dead socket model to `useChatApi` + a per-conversation Supabase Realtime channel; scope to DIRECT DMs
+  (schema has no presence/global-chat); add read receipts + unread. ~1.6k lines touched — verify in a running app.
+- **STRONGLY RECOMMENDED NOW: start the dev server** (`! pnpm dev` against hosted) so the accumulated W3 (journals) + W4
+  (notifications) + W6 (chat) all get browser-verified together (W1), instead of stacking more unverified UI. I can drive fixes
+  from whatever the run surfaces.
