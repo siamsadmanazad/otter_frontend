@@ -75,8 +75,9 @@ export default function LayoutProviders({
         />
         <MobileHeader />
         <DesktopSidebar />
-        {children}
-        <MobileNavigation profileId={session?.user?.id}  />
+        {/* Bottom padding clears the fixed mobile nav (+ iOS safe area); none on desktop. */}
+        <div className="pb-16 md:pb-0">{children}</div>
+        <MobileNavigation profileId={session?.user?.id} />
       </>
     );
   } else {
