@@ -3,12 +3,16 @@
  * Preserves the legacy envelope { message, status, data } the client (lib/requests.ts) reads.
  */
 import { NextResponse } from "next/server";
+import { captureRouteError } from "@/lib/observability";
 
 export function ok(data: unknown, message = "OK", status = 200) {
   return NextResponse.json({ message, status, data }, { status });
 }
 
 export function fail(message: string, status = 500, data: unknown = null) {
+  // Auto-report server errors (5xx) to observability; 4xx are client/validation
+  // errors and intentionally NOT reported (would be noise). No-op without SENTRY_DSN.
+  if (status >= 500) captureRouteError(message, { status });
   return NextResponse.json({ message, status, data }, { status });
 }
 
