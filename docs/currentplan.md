@@ -57,6 +57,62 @@
 
 ---
 
+## 🛡️ NEXT FOCUS — Backend Robustness & Completeness Plan (added 2026-06-20)
+
+> Derived from the backend/schema robustness analysis. Schema is production-quality (18 tables, RLS on all, 33
+> indexes, 43 checks, 13 RPCs, realtime, storage). These steps close the **robustness gaps**: (i) no live
+> rate-limiting, (ii) chat bypasses RLS via service-role, (iii) no server-side moderation, (iv) no OpenAPI spec,
+> (v) no automated RLS/contract tests, (vi) no observability. **Each numbered step = one small commit on `main`.**
+> AI/Gemini stays deferred (G14). BE=otter_backend · FE=otter_frontend · FL=otter_flutter.
+
+### Phase A — Abuse & rate-limiting (security; highest value)
+> `lib/rate-limiter.ts` is in-memory (per-instance) + wired into **zero** routes. Replace with a Postgres-backed
+> limiter (one source of truth across serverless instances), then enforce on spam-prone writes.
+- **A1 (BE):** Migration — `rate_limit_hit(p_key, p_limit, p_window_seconds) returns boolean` RPC (atomic
+  increment+check) backed by a small table. Validate via `supabase db reset`.
+- **A2 (FE):** `lib/ratelimit.ts` helper calling the RPC with key `userId|ip + route`; returns allow/deny + retry-after.
+- **A3 (FE):** Enforce on **comment POST**. · **A4:** **reaction POST**. · **A5:** **companion POST** (per-user/day).
+  · **A6:** **media POST** (upload cap). · **A7:** **chat send POST**. (429 on deny each.)
+
+### Phase B — Authorization hardening (chat → RLS)
+> Chat uses service-role admin + hand-rolled JS participant checks. Move to the **actor client** so Postgres RLS
+> (`is_conversation_participant`) enforces — defense in depth.
+- **B1 (FE):** conversations list/create → actor client. · **B2:** messages fetch/send → actor client.
+  · **B3:** read-receipts + soft-delete → actor client. · **B4 (test):** two-user check — user C denied A↔B convo.
+
+### Phase C — Content safety
+> NSFW is client-side only → bypassable.
+- **C1 (FE):** `/api/media` POST re-checks content **server-side** before storing (422 on explicit); keep client
+  check as fast-fail. · **C2 (opt):** text-moderation hook on caption/comment → route flagged to `reports`.
+
+### Phase D — Contract spec & automated tests
+- **D1 (BE):** `openapi.yaml` (3.1) for every `/api/*` route — envelope, `id` not `_id`, auth, irregular bodies.
+  Single source for Flutter codegen + drift checks.
+- **D2 (BE):** RLS test script vs local stack — per-table allow/deny matrix (anon + 2 authed users). Highest-value test.
+- **D3 (BE):** Route contract test script — assert envelope + `id` + irregular bodies (reaction `{post}`, etc.).
+
+### Phase E — Observability
+- **E1 (FE):** Sentry (env `SENTRY_DSN`, no-op if unset) via a shared `captureRouteError` in the `fail()` path.
+  · **E2:** funnel remaining `catch` blocks through it.
+
+### Phase F — User-gated (NOT autonomous)
+- **F1:** apply `profiles.preferences` migration to **hosted** (`supabase db push`) — needs **DB password**.
+- **F2:** Google OAuth config · `RESEND_API_KEY` · rotate DB password. · **F3 (later):** Gemini AI (Phase 8/G14).
+
+### Execution order & status
+Sequence: **A → B → C → D → E**; F anytime (user-gated). A+B = highest-impact security; D2 = highest-value safety net.
+
+| Phase | Steps | Status |
+|---|---|---|
+| A — rate-limiting | A1–A7 | ⬜ not started |
+| B — chat → RLS | B1–B4 | ⬜ not started |
+| C — content safety | C1–C2 | ⬜ not started |
+| D — spec + tests | D1–D3 | ⬜ not started |
+| E — observability | E1–E2 | ⬜ not started |
+| F — user-gated | F1–F3 | ⬜ awaiting user |
+
+---
+
 ## 0. Index
 - [1. Working agreements](#1-working-agreements)
 - [2. Execution order (efficiency-sorted)](#2-execution-order--efficiency-sorted)
