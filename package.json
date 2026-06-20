@@ -9,6 +9,8 @@
     "lint": "next lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "seed": "node scripts/seed.mjs",
+    "seed:purge": "node scripts/seed.mjs --purge",
     "start": "next start",
     "test:visual": "playwright test",
     "test:visual:update": "playwright test --update-snapshots"
