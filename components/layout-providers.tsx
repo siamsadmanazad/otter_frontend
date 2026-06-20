@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { MobileNavigation } from "./mobile/mobile-navigation";
 import { DesktopSidebar } from "./desktop-sidebar";
 import { DesktopHeader } from "./desktop-header";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { toast } from "sonner";
 import { useUserApi } from "@/lib/requests";
 import { SearchModal } from "./search-modal";
@@ -17,6 +17,10 @@ export default function LayoutProviders({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  // Chat is a full-screen experience — hide the bottom nav so it doesn't cover the
+  // message input, and drop the bottom padding so the thread fills the screen.
+  const hideMobileNav = pathname?.startsWith("/chat") ?? false;
   const [showSearchModal, setShowSearchModal] = useState(false);
   const { data: session, status } = useSession();
 
@@ -75,9 +79,9 @@ export default function LayoutProviders({
         />
         <MobileHeader />
         <DesktopSidebar />
-        {/* Bottom padding clears the fixed mobile nav (+ iOS safe area); none on desktop. */}
-        <div className="pb-16 md:pb-0">{children}</div>
-        <MobileNavigation profileId={session?.user?.id} />
+        {/* Bottom padding clears the fixed mobile nav (+ iOS safe area); none on desktop or chat. */}
+        <div className={hideMobileNav ? "" : "pb-16 md:pb-0"}>{children}</div>
+        {!hideMobileNav && <MobileNavigation profileId={session?.user?.id} />}
       </>
     );
   } else {
