@@ -1,7 +1,10 @@
 import { NextRequest } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createActorClient } from "@/lib/supabase/server";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
+
+// Actor client: RLS (message_reads_insert_self + messages_select_participant) enforces
+// that the caller can only mark their own reads on conversations they belong to.
 
 // POST /api/chat/conversations/[id]/read -> mark the other party's messages in this
 // conversation as read by the caller (powers unread badges + "seen" receipts).
@@ -12,7 +15,7 @@ export async function POST(
   const me = await getServerUser(request);
   if (!me) return fail("Unauthorized", 401);
   const { id } = await params;
-  const db = createAdminClient();
+  const db = await createActorClient(request);
 
   const { data: member } = await db
     .from("conversation_participants")

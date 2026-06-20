@@ -1,7 +1,9 @@
 import { NextRequest } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createActorClient } from "@/lib/supabase/server";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
+
+// Actor client: RLS messages_update_sender ensures only the sender can soft-delete.
 
 // DELETE /api/chat/messages/[id] -> soft-delete the caller's own message.
 export async function DELETE(
@@ -11,7 +13,7 @@ export async function DELETE(
   const me = await getServerUser(request);
   if (!me) return fail("Unauthorized", 401);
   const { id } = await params;
-  const db = createAdminClient();
+  const db = await createActorClient(request);
 
   const { data, error } = await db
     .from("messages")
