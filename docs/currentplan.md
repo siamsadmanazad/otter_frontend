@@ -215,6 +215,10 @@ Web steps W1→W9 are sequential; Flutter F0→F6 can begin once W1 confirms the
   removed leftover Sanity + dead mongoose type files; fixed `imageUpload`/`rate-limiter` bugs; finished `_id→id` in
   `types/{post,tribes,user}.d.ts` + `NotificationDocument`; deleted dead `tribe-post-card.tsx`. **Errors 300 → 109.**
   Corrected the docs' wrong dead-file list (see `gap.md` "Corrections"). 4 commits pushed to `rework/supabase-rewire`.
-- **Next:** finish remaining 109 errors inside their feature steps (W4 notifications, W6 chat) + a final sweep, then drop the
-  ignore flags (W0). **W1 (browser smoke) needs the dev server running** — user starts `! pnpm dev` against hosted, or grant a
-  browser tool, then drive the core flow.
+- 2026-06-20 — **W3 Journals DONE (code).** `create-journal` now persists via the posts API as `postType=JOURNAL` (Dialog+
+  mutation like CreatePost; feed invalidation; Save Draft → localStorage). Re-exposed the "Create Journey" tile in the composer
+  (it was commented out with a broken import → journals were unreachable). Typecheck-clean, 0 new errors. Commit `3aebd31`.
+  Fast-follow noted: rich-HTML fidelity needs a `content` column + sanitized renderer (today body is flattened to plain text).
+- **Next:** W4 (notification center persistence) — also clears the remaining notification-container type errors. Then W5/W6.
+  **W1 (browser smoke) still needs the dev server running** — user starts `! pnpm dev` against hosted (or grant a browser tool);
+  it will verify W3 journals + the core loop in a real browser.

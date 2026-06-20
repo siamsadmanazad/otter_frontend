@@ -56,7 +56,7 @@
 |---|---|---|---|---|---|---|
 | **G1** | **Browser smoke** of Phase 1 (login→post w/ image upload→feed→like→comment→follow→tribe→search) | Never run in browser; only via Bearer-token API | P0 | M | FE | De-risks everything. Surfaces first real integration bugs. **Do first.** |
 | **G2** | **Realtime live-push** verified in 2 browser sessions (notification appears w/o refresh) | Wired, not browser-tested | P0 | S | FE | Confirms `useWebsocket` shim. Pairs with G1. |
-| **G3** | **Journals** submit → persist | `create-journal.tsx onSubmit` only `console.log`s | P1 | S | FE | Wire to posts API as `postType=JOURNAL` (rich text + media). Unique, cheap. |
+| **G3** | **Journals** submit → persist | **DONE (code) 2026-06-20** — needs browser verify | P1 | S | FE | Wired to posts API as `postType=JOURNAL` (caption=title+body, location); Create Journey tile re-exposed (was commented out). **Fast-follow:** rich-HTML fidelity (add a `content` column + sanitized renderer; today the Tiptap body is flattened to plain text). |
 | **G4** | **Notification center** persistence UI (paginate, mark-read, mark-all-read, unread badge) | Partial: GET+PATCH route exists | P1 | M | FE | Pairs with G2. |
 | **G5** | **Settings tabs** (notifications/privacy/business) | Disabled `opacity-50 grayscale cursor-not-allowed` | P1 | M | FE+BE | Needs prefs column/table on `profiles`. Build forms that save+reload. |
 | **G6** | **Chat (realtime DM)** send/receive | Shell UI exists; `useChatLogic` `console.log`s; no message routes | P1 | L | FE | DB tables exist (B9). Build routes (list/create/fetch/send/read/delete) + thread UI + per-conversation realtime channel. |
