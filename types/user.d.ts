@@ -1,9 +1,6 @@
-import { Document } from 'mongoose';
-import type { v4 as uuidv4 } from 'uuid';
-
-export interface UserDocument extends Document {
-  _id: string;
-  serial: uuidv4;
+export interface UserDocument {
+  id: string;
+  serial: string;
   bio: string;
   location: string;
   fullName: string;
@@ -25,8 +22,8 @@ export interface UserDocument extends Document {
 }
 
 export interface IUserProfile {
-  _id: string;
-  serial: uuidv4;
+  id: string;
+  serial: string;
   bio: string;
   location: string;
   fullName: string;
