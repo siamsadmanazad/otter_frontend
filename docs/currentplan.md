@@ -39,6 +39,7 @@ Web steps W1→W9 are sequential; Flutter F0→F6 can begin once W1 confirms the
 
 | Day(s) | Step | What | Gap |
 |---|---|---|---|
+| 1 | W0 | **Finish tsc-clean** (in progress: ~300→109 hidden errors) → then drop `ignoreBuildErrors` | G16 |
 | 1 | W1 | Browser smoke of Phase 1 (login→post+image→feed→like→comment→follow→tribe→search) | G1 |
 | 1 | W2 | Realtime live-push verified, 2 sessions | G2 |
 | 2 | W3 | Journals submit → persist as `postType=JOURNAL` | G3 |
@@ -209,4 +210,11 @@ Web steps W1→W9 are sequential; Flutter F0→F6 can begin once W1 confirms the
 
 ## 6. Status log
 - 2026-06-20 — Plan + `gap.md` authored. Scope locked (Web+Flutter; Journals/Chat/Settings/Notifications; heuristic Companions;
-  shop hidden). Flutter UX direction added: intuitive feed + Reddit-style tribes. **Next: execute W1 (browser smoke).**
+  shop hidden). Flutter UX direction added: intuitive feed + Reddit-style tribes.
+- 2026-06-20 — **W0 started.** Discovered Phase 1 was never tsc-clean (~300 errors hidden by `ignoreBuildErrors`). Fixed:
+  removed leftover Sanity + dead mongoose type files; fixed `imageUpload`/`rate-limiter` bugs; finished `_id→id` in
+  `types/{post,tribes,user}.d.ts` + `NotificationDocument`; deleted dead `tribe-post-card.tsx`. **Errors 300 → 109.**
+  Corrected the docs' wrong dead-file list (see `gap.md` "Corrections"). 4 commits pushed to `rework/supabase-rewire`.
+- **Next:** finish remaining 109 errors inside their feature steps (W4 notifications, W6 chat) + a final sweep, then drop the
+  ignore flags (W0). **W1 (browser smoke) needs the dev server running** — user starts `! pnpm dev` against hosted, or grant a
+  browser tool, then drive the core flow.

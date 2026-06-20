@@ -69,6 +69,15 @@
 | **G13** | **Observability** (Sentry), load test, search ranking | None | P2 | M | FE+BE | Post-launch. |
 | **G14** | **AI Companions (Gemini)** + server NSFW moderation | Not built | P2 | L | FE+BE | Deferred (user chose heuristic). Drop-in later. |
 | **G15** | **Manual/security** items | Pending | P0 | S | — | Rotate DB password; confirm Google OAuth configured; provide RESEND_API_KEY for email; `.env.local` keys present. |
+| **G16** | **Finish tsc-clean + drop `ignoreBuildErrors`** | In progress: ~300 hidden errors → **109** (2026-06-20) | P1 | M | FE | Phase 1 was **never** typecheck-clean — `ignoreBuildErrors` masked it; docs over-claimed "build green". Type-decl `_id→id` + de-mongoose done. Residual 109 are per-feature; clear them inside W4/W5/W6 + a final sweep, then remove the ignore flags. |
+
+### Corrections to prior docs (verified 2026-06-20)
+- **Phase 1 not actually green:** `pnpm build` only passed because `next.config` still sets `ignoreBuildErrors`/`ignoreDuringBuilds`. `tsc --noEmit` showed ~300 errors. Now 109 after type-decl fixes. See G16.
+- **Dead-file list in the cleanup docs was WRONG — do not blind-delete:**
+  - `components/tribes-page/tribes-page_v1.01.tsx` is **LIVE** (imported by `app/tribes/page.tsx`). The docs said delete it — don't.
+  - `components/tribe-page/tribe-post-card-test.tsx` is **LIVE** (imported by `tribe-posts.tsx`) despite the `-test` name.
+  - Actually-dead (one deleted): `components/tribe-page/tribe-post-card.tsx` (deleted), `components/tribes-page/tribes-page_v2.tsx` (unused).
+- **Already cleaned (2026-06-20):** deleted leftover `sanity.config.ts`/`sanity.cli.ts` + dead `types/{profile,review}.ts`; fixed `imageUpload.utils` + `rate-limiter.middleware` type bugs; finished `_id→id` in `types/{post,tribes,user}.d.ts` + `NotificationDocument`.
 
 ---
 
