@@ -1,112 +1,116 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { MessageSquare, Users } from "lucide-react";
-import { IDisplayConversation } from "@/types/chat.d";
 import { ChatListHeader } from "./chatlist-header";
-import type { Session } from "@/lib/auth/session";
+import type { Conversation } from "@/types/chat.d";
 
 interface ChatListProps {
-  selectedChatId: string | null;
-  selectedChatType: "private" | "group" | "global" | null;
-  displayConversations: IDisplayConversation[];
-  handleSelectChat: (conv: IDisplayConversation) => void;
-  socketStatus: string;
-  isLoggedIn: boolean;
-  error: string | null;
-  session: Session | null;
-  onCreateGroupClick: () => void;
+  conversations: Conversation[];
+  activeId: string | null;
+  isLoading: boolean;
+  onSelect: (conv: Conversation) => void;
+  onNewChat: () => void;
+}
+
+function convTitle(conv: Conversation): string {
+  if (conv.type === "GROUP") return conv.name || "Group";
+  return conv.otherUser?.fullName || conv.otherUser?.username || "Conversation";
+}
+
+function preview(conv: Conversation): string {
+  if (!conv.lastMessage) return "Start the conversation";
+  if (conv.lastMessage.deleted) return "Message deleted";
+  return conv.lastMessage.content || "Sent an attachment";
 }
 
 export function ChatList({
-  selectedChatId,
-  selectedChatType,
-  displayConversations,
-  handleSelectChat,
-  socketStatus,
-  isLoggedIn,
-  error,
-  session,
-  onCreateGroupClick,
+  conversations,
+  activeId,
+  isLoading,
+  onSelect,
+  onNewChat,
 }: ChatListProps) {
+  const [search, setSearch] = useState("");
+
+  const filtered = conversations.filter((c) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return convTitle(c).toLowerCase().includes(q);
+  });
+
   return (
     <div
       className={`${
-        selectedChatId && "hidden md:block"
+        activeId && "hidden md:block"
       } w-full md:w-80 bg-white border-r flex flex-col`}
     >
-      {/* Desktop Header */}
-      <ChatListHeader
-        socketStatus={socketStatus}
-        isLoggedIn={isLoggedIn}
-        error={error}
-        session={session}
-        onCreateGroupClick={onCreateGroupClick}
-      />
+      <ChatListHeader onNewChat={onNewChat} search={search} setSearch={setSearch} />
 
-      {/* Conversations List */}
       <ScrollArea className="flex-1">
         <div className="p-2">
-          {displayConversations.map((conv) => (
-            <div
-              key={conv.type === "global" ? conv.id : `${conv.type}-${conv.id}`}
-              onClick={() => handleSelectChat(conv)}
-              className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer hover:bg-gray-100 ${
-                (selectedChatId === conv.id &&
-                  selectedChatType === conv.type) ||
-                (conv.type === "global" &&
-                  selectedChatId === "global-chat" &&
-                  selectedChatType === "global")
-                  ? "bg-blue-50 border border-blue-200"
-                  : ""
-              }`}
-            >
-              <div className="relative">
-                {conv.type === "global" ? (
-                  <MessageSquare className="w-12 h-12 text-gray-500 p-2 rounded-full bg-gray-100" />
-                ) : conv.type === "group" ? (
-                  <Users className="w-12 h-12 text-gray-500 p-2 rounded-full bg-gray-100" />
-                ) : (
-                  <Avatar className="w-12 h-12">
-                    <AvatarImage
-                      src={conv.avatar || "/placeholder.svg"}
-                      alt={conv.name}
-                    />
-                    <AvatarFallback>{conv.name[0]}</AvatarFallback>
-                  </Avatar>
-                )}
-                {conv.online && conv.type === "user" && (
-                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <h3
-                    className={`font-semibold text-sm truncate ${
-                      conv?.unread > 0 ? "font-bold" : ""
-                    }`}
-                  >
-                    {conv.name}
-                  </h3>
-                  <span className="text-xs text-gray-500">
-                    {conv.timestamp}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-gray-600 truncate">
-                    {conv.lastMessage}
-                  </p>
-                  {conv.unread > 0 && (
-                    <span className="bg-blue-500 text-white text-xs rounded-full px-2 py-1 min-w-[20px] text-center">
-                      {conv.unread}
-                    </span>
-                  )}
-                </div>
-              </div>
+          {isLoading ? (
+            <div className="p-4 text-sm text-gray-500 text-center">
+              Loading conversations…
             </div>
-          ))}
+          ) : filtered.length === 0 ? (
+            <div className="p-6 text-sm text-gray-500 text-center">
+              No conversations yet. Tap the compose icon to start one.
+            </div>
+          ) : (
+            filtered.map((conv) => {
+              const title = convTitle(conv);
+              const avatar =
+                conv.type === "GROUP"
+                  ? conv.coverImage
+                  : conv.otherUser?.profileImage;
+              const time = conv.lastMessage
+                ? new Date(conv.lastMessage.createdAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                : "";
+              return (
+                <div
+                  key={conv.id}
+                  onClick={() => onSelect(conv)}
+                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer hover:bg-gray-100 ${
+                    activeId === conv.id ? "bg-blue-50 border border-blue-200" : ""
+                  }`}
+                >
+                  <Avatar className="w-12 h-12">
+                    <AvatarImage src={avatar || "/placeholder.svg"} alt={title} />
+                    <AvatarFallback>{title[0]}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <h3
+                        className={`text-sm truncate ${
+                          conv.unread ? "font-bold" : "font-semibold"
+                        }`}
+                      >
+                        {title}
+                      </h3>
+                      <span className="text-xs text-gray-500">{time}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p
+                        className={`text-sm truncate ${
+                          conv.unread ? "text-gray-900 font-medium" : "text-gray-600"
+                        }`}
+                      >
+                        {preview(conv)}
+                      </p>
+                      {conv.unread && (
+                        <span className="ml-2 w-2.5 h-2.5 bg-blue-500 rounded-full flex-shrink-0" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </ScrollArea>
     </div>

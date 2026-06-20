@@ -1,30 +1,41 @@
-export interface IMessage {
-  id: string;
-  sender: string;
-  content: string;
-  createdAt: Date;
-  updatedAt: Date;
-  receiver?: string;
-  groupId?: string;
-  reports: string[];
-}
+// Chat types for the direct-message feature (Supabase-backed).
 
-export interface IUser {
+export interface ChatUser {
   id: string;
-  socketId: string;
   username: string;
-  isOnline: boolean;
+  fullName: string;
+  profileImage?: string | null;
 }
 
-export interface IDisplayConversation {
+export interface ChatMessage {
   id: string;
-  type: "user" | "group" | "global";
-  name: string;
-  avatar?: string;
-  online?: boolean;
-  lastMessage?: string;
-  timestamp?: string;
-  unread?: number;
+  conversationId: string;
+  senderId: string;
+  content: string | null;
+  attachments?: any[];
+  deleted?: boolean;
+  editedAt?: string | null;
+  createdAt: string;
+  sender?: ChatUser;
 }
 
-export type Group = any;
+export interface ConversationLastMessage {
+  id: string;
+  content: string | null;
+  senderId: string;
+  createdAt: string;
+  deleted?: boolean;
+}
+
+export interface Conversation {
+  id: string;
+  serial?: string;
+  type: "DIRECT" | "GROUP";
+  name?: string | null;
+  coverImage?: string | null;
+  otherUser: ChatUser | null;
+  members?: ChatUser[];
+  lastMessage: ConversationLastMessage | null;
+  lastMessageAt?: string | null;
+  unread: boolean;
+}
