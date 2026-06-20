@@ -1,8 +1,12 @@
 import { NextRequest } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createActorClient } from "@/lib/supabase/server";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
 import { enforceRateLimit } from "@/lib/ratelimit";
+
+// This route runs as the CALLER (actor client) so Postgres RLS enforces participation
+// (messages_select_participant / messages_insert_sender). The isParticipant() check just
+// yields a clean 403 instead of an empty/denied result.
 
 function mapMessage(m: Record<string, any>) {
   return {
@@ -46,7 +50,7 @@ export async function GET(
   const me = await getServerUser(request);
   if (!me) return fail("Unauthorized", 401);
   const { id } = await params;
-  const db = createAdminClient();
+  const db = await createActorClient(request);
   if (!(await isParticipant(db, id, me.id)))
     return fail("Not a participant of this conversation", 403);
 
@@ -82,7 +86,7 @@ export async function POST(
   if (limited) return limited;
 
   const { id } = await params;
-  const db = createAdminClient();
+  const db = await createActorClient(request);
   if (!(await isParticipant(db, id, me.id)))
     return fail("Not a participant of this conversation", 403);
 
