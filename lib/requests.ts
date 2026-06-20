@@ -767,6 +767,28 @@ class ChatAPI extends BaseAPI {
   };
 }
 
+class SettingsAPI extends BaseAPI {
+  public getPreferences = async (): Promise<AxiosResponse> => {
+    try {
+      const response = await this.apiClient.get(`/api/settings`);
+      return response.data;
+    } catch (error) {
+      const axiosError = error as any;
+      throw axiosError.response?.data || axiosError.message;
+    }
+  };
+  public updatePreferences = async (patch: any): Promise<AxiosResponse> => {
+    try {
+      const response = await this.apiClient.patch(`/api/settings`, patch);
+      return response.data;
+    } catch (error) {
+      const axiosError = error as any;
+      throw axiosError.response?.data || axiosError.message;
+    }
+  };
+}
+
+export const useSettingsApi = new SettingsAPI();
 export const useChatApi = new ChatAPI();
 export const useNotificationApi = new NotificationAPI();
 export const useAuthApi = new AuthAPI();
