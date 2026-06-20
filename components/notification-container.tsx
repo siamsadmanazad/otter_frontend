@@ -24,13 +24,13 @@ import {
 import { useRouter } from "next/navigation";
 
 interface NotificationDocument {
-  _id?: string;
+  id?: string;
   serial: string;
   createdBy: {
     user: {
-      _id: string;
+      id: string;
       fullName: string;
-      username: "string";
+      username: string;
     };
   };
   receiver: string;
