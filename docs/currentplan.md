@@ -34,11 +34,12 @@
    (bottom nav) → intuitive feed → create post/journal → **Reddit-style tribes** → notifications → chat →
    profile/settings. Data layer already exists; wire screens to the repositories. Verify with `flutter analyze` +
    run against hosted via `--dart-define` (seeded account).
-2. **Web mobile-view optimization** (was mid-audit): the **bottom nav (`components/mobile/mobile-navigation.tsx`)
-   links to DEAD routes** (`/tripeasy`, `/shops`, `/groups`, `/person/me`, `/person/likes`) and **omits
-   Tribes/Chat/Notifications**; no safe-area padding; Profile ignores the real `profileId`. Rebuild it (real routes
-   + active states + `env(safe-area-inset-bottom)` + real profile id) and add bottom padding so content clears the
-   fixed nav. Header (`mobile-header.tsx`) already exposes chat + notifications + hamburger.
+2. **Web mobile-view optimization** — **DONE 2026-06-20 (session 2 cont.)**: rebuilt bottom nav (real routes
+   Feed/Tribes/Create/Chat/Profile + active states + safe-area + real profileId); added Search to mobile header
+   (+ safe-area top); `pb-16` content clearance for the fixed nav; fixed tribes page overflow (`w-[500px]` pill →
+   scrollable, edge-to-edge padding); chat thread is full-screen on mobile (nav hidden so the input isn't covered).
+   tsc 0, `pnpm build` passes (52/52). **Remaining mobile polish (optional):** per-component a11y/tap-target sweep
+   on person-page/settings/companions if desired.
 3. **OpenAPI 3.1 spec** in `otter_backend` (Phase 9.4) — documents the contract for Flutter; not yet written.
 4. **Hardening** (§16): wire `lib/rate-limiter` into comment/reaction/companion routes; Sentry scaffold (env DSN).
 
