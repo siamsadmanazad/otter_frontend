@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
+import { withDefaults } from "@/lib/preferences";
 
 type Profile = {
   id: string;
@@ -129,6 +130,32 @@ export async function POST(request: NextRequest): Promise<Response> {
     .eq("id", targetId)
     .single();
   if (!target) return fail("User not found", 404);
+
+  // Enforce the target's who-can-message privacy preference. Read it defensively so
+  // the route keeps working before the `preferences` migration reaches an env.
+  let whoCanMessage = "EVERYONE";
+  const { data: prefRow, error: prefErr } = await db
+    .from("profiles")
+    .select("preferences")
+    .eq("id", targetId)
+    .maybeSingle();
+  if (!prefErr && prefRow)
+    whoCanMessage = withDefaults((prefRow as any).preferences).privacy
+      .whoCanMessage;
+
+  if (whoCanMessage === "NONE")
+    return fail("This user isn't accepting new messages", 403);
+  if (whoCanMessage === "FOLLOWERS") {
+    // "People you follow can message you" -> the target must follow the sender.
+    const { data: rel } = await db
+      .from("follows")
+      .select("follower_id")
+      .eq("follower_id", targetId)
+      .eq("following_id", me.id)
+      .maybeSingle();
+    if (!rel)
+      return fail("Only people this user follows can message them", 403);
+  }
 
   // Find an existing DIRECT conversation shared by both users.
   const { data: mine } = await db

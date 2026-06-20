@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSession } from "@/lib/auth/session";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/browser";
 import { useChatApi } from "@/lib/requests";
 import type { Conversation, ChatMessage, ChatUser } from "@/types/chat.d";
@@ -185,13 +186,17 @@ export function useChatLogic() {
 
   const startConversationWith = useCallback(
     async (userId: string) => {
-      const res: any = await useChatApi.createDirectConversation(userId);
-      const conv = res?.data as Conversation;
-      if (!conv?.id) return;
-      await queryClient.invalidateQueries({ queryKey: CONV_KEY });
-      setActiveId(conv.id);
-      setMessages([]);
-      await loadMessages(conv.id);
+      try {
+        const res: any = await useChatApi.createDirectConversation(userId);
+        const conv = res?.data as Conversation;
+        if (!conv?.id) return;
+        await queryClient.invalidateQueries({ queryKey: CONV_KEY });
+        setActiveId(conv.id);
+        setMessages([]);
+        await loadMessages(conv.id);
+      } catch (e: any) {
+        toast.error(e?.message || "Couldn't start that conversation.");
+      }
     },
     [queryClient, loadMessages]
   );
