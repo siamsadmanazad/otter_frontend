@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createActorClient } from "@/lib/supabase/server";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
 import { withDefaults } from "@/lib/preferences";
@@ -22,10 +23,12 @@ function mapUser(p: Profile | null) {
 }
 
 // GET /api/chat/conversations -> the caller's conversations, newest activity first.
+// Actor client: RLS (cp_select_participant / conversations_select_participant) scopes
+// every read to the caller's own conversations.
 export async function GET(request: NextRequest): Promise<Response> {
   const me = await getServerUser(request);
   if (!me) return fail("Unauthorized", 401);
-  const db = createAdminClient();
+  const db = await createActorClient(request);
 
   const { data: myRows } = await db
     .from("conversation_participants")
@@ -114,6 +117,10 @@ export async function GET(request: NextRequest): Promise<Response> {
 }
 
 // POST /api/chat/conversations  body { userId } -> create or return the DIRECT conversation with that user.
+// NOTE: intentionally uses the admin client. Creating a direct conversation must read the OTHER user's
+// participant rows (for dedup) and insert THEIR participant row — both forbidden to the actor by
+// cp_select_participant / cp_insert_self. The operation is gated by the auth check + the target's
+// who-can-message privacy preference below, so it's a deliberate, guarded exception to the actor-client rule.
 export async function POST(request: NextRequest): Promise<Response> {
   const me = await getServerUser(request);
   if (!me) return fail("Unauthorized", 401);
