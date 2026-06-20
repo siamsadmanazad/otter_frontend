@@ -18,7 +18,7 @@ export function JoinedTribes() {
   } = useInfiniteQuery({
     queryKey: ["joinedTribes"],
     queryFn: async ({ pageParam = 1 }) => {
-      const response = useTribeAPI.getJoinedTribes(userId);
+      const response = useTribeAPI.getJoinedTribes(userId ?? "");
       return response;
     },
     getNextPageParam: (lastPage, allPages) => {

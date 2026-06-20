@@ -13,8 +13,8 @@ export async function generateMetadata({
 
   try {
     const postData = await GetPost(id);
-    if (postData && postData.caption) {
-      const words = postData.caption.split(/\s+/).filter(Boolean);
+    if (postData && (postData as any).caption) {
+      const words = (postData as any).caption.split(/\s+/).filter(Boolean);
       title = words.slice(0, 5).join(" ");
     }
   } catch (error) {

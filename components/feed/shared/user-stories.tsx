@@ -58,7 +58,6 @@ export function UserStories() {
         </CardContent>
       </Card>
     );
-  } else {
-    <></>;
   }
+  return null;
 }
