@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
+import { enforceRateLimit } from "@/lib/ratelimit";
 
 function mapMessage(m: Record<string, any>) {
   return {
@@ -75,6 +76,11 @@ export async function POST(
 ): Promise<Response> {
   const me = await getServerUser(request);
   if (!me) return fail("Unauthorized", 401);
+
+  // Anti-spam on messaging: max 30 / 60s per user.
+  const limited = await enforceRateLimit("chat-send", me.id, request, 30, 60);
+  if (limited) return limited;
+
   const { id } = await params;
   const db = createAdminClient();
   if (!(await isParticipant(db, id, me.id)))
