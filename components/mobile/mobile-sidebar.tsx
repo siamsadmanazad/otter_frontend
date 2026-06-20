@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { SHOP_ENABLED } from "@/lib/flags";
 import {
   Home,
   Users,
@@ -15,7 +16,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { signOut } from "next-auth/react";
+import { signOut } from "@/lib/auth/session";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 
@@ -65,7 +66,9 @@ export function Sidebar() {
     { href: "/companions", icon: Users, label: "Companions" },
     { href: "/chat", icon: MessageCircle, label: "Chat" },
     { href: "/groups", icon: Boxes, label: "Groups" },
-    { href: "/shops", icon: MapPin, label: "Shops" },
+    ...(SHOP_ENABLED
+      ? [{ href: "/shops", icon: MapPin, label: "Shops" }]
+      : []),
     { href: "/settings", icon: Settings, label: "Settings" },
   ];
 

@@ -25,8 +25,8 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import { useWebsocket } from "@/lib/useWebsocket";
 import { IPostProps } from "@/types/post";
 import { toast } from "sonner";
-import { Socket } from "socket.io-client";
-import { useSession } from "next-auth/react";
+import type { SocketLike as Socket } from "@/lib/useWebsocket";
+import { useSession } from "@/lib/auth/session";
 import { TribePostCard } from "./tribe-post-card-test";
 
 dayjs.extend(relativeTime);

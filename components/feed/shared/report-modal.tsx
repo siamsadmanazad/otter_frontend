@@ -19,7 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 import { toast } from "sonner";
 import { useReportApi } from "@/lib/requests";
 
@@ -41,10 +41,7 @@ export const reportSchema = z.object({
   reasonDescription: z.string().trim().optional(),
   relatedComment: z.string().trim().optional(),
   relatedPost: z.string().trim().optional(),
-  status: z
-    .enum(["PENDING", "REVIEWED", "RESOLVED"])
-    .optional()
-    .default("PENDING"),
+  status: z.enum(["PENDING", "REVIEWED", "RESOLVED"]).optional(),
 });
 
 export type ReportInput = z.infer<typeof reportSchema>;

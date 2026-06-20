@@ -1,48 +1,46 @@
 import { NextRequest } from "next/server";
-import { getSearchData } from "./action";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { ok, fail } from "@/lib/api/http";
 
-export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const profileFilter = searchParams.get("profile") ?? null;
-  const groupFilter = searchParams.get("group") ?? null;
-  const shopFilter = searchParams.get("shop") ?? null;
-  const hashtags = searchParams.get("hashtags") ?? null;
+// GET /api/search?page=&profile=&group=&shop=&hashtags=
+// Returns { users: [{id,username,fullName,profileImage}], hashtags: [{id, hashtags[]}] }
+export async function GET(request: NextRequest): Promise<Response> {
+  try {
+    const sp = request.nextUrl.searchParams;
+    const profileFilter = sp.get("profile")?.trim() || "";
+    const hashtagsFilter = sp.get("hashtags")?.trim() || "";
+    const limit = parseInt(sp.get("limit") ?? "10", 10);
 
-  const page = parseInt(searchParams.get("page") ?? "1", 10) ?? null;
-  const limit = parseInt(searchParams.get("limit") ?? "10") ?? null;
+    const db = createAdminClient();
+    const result: { users: unknown[]; hashtags: unknown[] } = { users: [], hashtags: [] };
 
-  const searchResult = await getSearchData({
-    profileFilter,
-    groupFilter,
-    shopFilter,
-    hashtags,
-    page,
-    limit,
-  });
-  return Response.json({
-    message: "Fetched search results",
-    status: 200,
-    method: request.method,
-    data: searchResult,
-  });
-}
+    if (profileFilter) {
+      const { data } = await db
+        .from("profiles")
+        .select("id, username, full_name, profile_image")
+        .or(`username.ilike.%${profileFilter}%,full_name.ilike.%${profileFilter}%`)
+        .limit(limit);
+      result.users = ((data ?? []) as any[]).map((u) => ({
+        id: u.id,
+        username: u.username,
+        fullName: u.full_name,
+        profileImage: u.profile_image,
+      }));
+    }
 
-export async function POST(request: NextRequest) {
-  return Response.json({
-    message: "Hello World",
-    status: 200,
-    method: request.method,
-  });
-}
+    if (hashtagsFilter) {
+      const tag = hashtagsFilter.replace(/^#/, "").toLowerCase();
+      const { data } = await db
+        .from("posts")
+        .select("id, hashtags, caption")
+        .or(`hashtags.cs.{${tag}},caption.ilike.%${hashtagsFilter}%`)
+        .limit(limit);
+      result.hashtags = ((data ?? []) as any[]).map((p) => ({ id: p.id, hashtags: p.hashtags ?? [] }));
+    }
 
-export async function OPTIONS(request: NextRequest) {
-  return new Response(null, {
-    status: 200,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Max-Age": "86400",
-    },
-  });
+    return ok(result, "Fetched search results");
+  } catch (e) {
+    console.error("GET /api/search error:", e);
+    return fail("Internal server error", 500);
+  }
 }

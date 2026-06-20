@@ -1,121 +1,105 @@
 import { NextRequest } from "next/server";
-import { getAllReviews, getReviewById } from "./actions";
-import { runDBOperation } from "@/lib/useDB";
-import reviewSchema from "@/utils/schema/review-schema";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getServerUser } from "@/lib/auth/server";
+import { ok, fail } from "@/lib/api/http";
 
-export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const reviewId = searchParams.get("id") ?? "";
-
-  if (!reviewId) {
-    const page = parseInt(searchParams.get("page") ?? "1");
-    const limit = parseInt(searchParams.get("limit") ?? "10");
-    const data = await getAllReviews({ page, limit });
-    return Response.json({
-      message: "Recieved data",
-      status: 200,
-      data,
-    });
-  } else {
-    const data = await getReviewById(reviewId);
-    return Response.json({
-      message: "Recieved data",
-      status: 200,
-      data,
-    });
+// GET /api/review?id= | ?page=&limit=
+export async function GET(request: NextRequest): Promise<Response> {
+  const sp = request.nextUrl.searchParams;
+  const id = sp.get("id") ?? "";
+  const db = createAdminClient();
+  if (id) {
+    const { data } = await db.from("reviews").select("*").eq("id", id).maybeSingle();
+    return ok(data, "Received data");
   }
+  const page = parseInt(sp.get("page") ?? "1", 10);
+  const limit = parseInt(sp.get("limit") ?? "10", 10);
+  const from = (page - 1) * limit;
+  const { data } = await db
+    .from("reviews")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .range(from, from + limit - 1);
+  return ok(data ?? [], "Received data");
 }
 
-export async function POST(request: NextRequest) {
+// POST /api/review  body { type, scope, review|title|description, media? }
+export async function POST(request: NextRequest): Promise<Response> {
+  const user = await getServerUser(request);
+  if (!user) return fail("Unauthorized", 401);
   try {
-    const body = await request.json();
-    if (body.type === "REVIEW") {
-      const data = await runDBOperation(async () => {
-        const reviewBody = new reviewSchema(body);
-        return await reviewBody.save();
-      });
-      return Response.json({
-        message: "review submitted",
-        status: 200,
-        data,
-      });
-    } else {
-      const data = await runDBOperation(async () => {
-        const reviewBody = new reviewSchema(body);
-        return await reviewBody.save();
-      });
-      return Response.json({
-        message: "bug report submitted",
-        status: 200,
-        data,
-      });
-    }
-  } catch (err) {
-    const errResponse = err as unknown as { message: string; status: number };
-    return Response.json({
-      message: errResponse.message,
-      status: errResponse.status,
-    });
+    const b = await request.json();
+    const db = createAdminClient();
+    const { data, error } = await db
+      .from("reviews")
+      .insert({
+        user_id: user.id,
+        type: b.type === "BUG_REPORT" ? "BUG_REPORT" : "REVIEW",
+        scope: b.scope ?? "USER_EXPERIENCE",
+        review: b.review ?? null,
+        title: b.title ?? null,
+        description: b.description ?? null,
+        media: b.media ?? [],
+      })
+      .select("*")
+      .single();
+    if (error) return fail(error.message, 500);
+    return ok(data, b.type === "BUG_REPORT" ? "bug report submitted" : "review submitted");
+  } catch (e) {
+    console.error("POST /api/review error:", e);
+    return fail("Internal server error", 500);
   }
 }
 
-export async function PATCH(request: NextRequest) {
+// PATCH /api/review?id=  body { ...fields }
+export async function PATCH(request: NextRequest): Promise<Response> {
+  const user = await getServerUser(request);
+  if (!user) return fail("Unauthorized", 401);
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const profileId = searchParams.get("id");
-    const requestBody = await request.json();
-    const updateReview = await runDBOperation(async () => {
-      const response = await reviewSchema.findByIdAndUpdate(
-        profileId,
-        requestBody,
-        { new: true }
-      );
-      return response;
-    });
-    return Response.json({
-      message: "Review updated",
-      status: 200,
-      data: updateReview,
-    });
-  } catch (err) {
-    const errResponse = err as unknown as { message: string; status: number };
-    return Response.json({
-      message: errResponse.message,
-      status: errResponse.status,
-    });
+    const id = request.nextUrl.searchParams.get("id");
+    if (!id) return fail("Review ID is required", 400);
+    const b = await request.json();
+    const allowed: Record<string, string> = {
+      type: "type",
+      scope: "scope",
+      status: "status",
+      review: "review",
+      title: "title",
+      description: "description",
+      media: "media",
+    };
+    const update: Record<string, unknown> = {};
+    for (const [k, col] of Object.entries(allowed)) if (k in b) update[col] = b[k];
+    const db = createAdminClient();
+    const { data, error } = await db
+      .from("reviews")
+      .update(update)
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .select("*")
+      .single();
+    if (error || !data) return fail("Review not found", 404);
+    return ok(data, "Review updated");
+  } catch (e) {
+    console.error("PATCH /api/review error:", e);
+    return fail("Internal server error", 500);
   }
 }
 
-export async function DELETE(request: NextRequest) {
-  try {
-    const searchParams = request.nextUrl.searchParams;
-    const reviewId = searchParams.get("id");
-    const deleteReview = await runDBOperation(async () => {
-      const response = await reviewSchema.findByIdAndDelete(reviewId);
-      return response;
-    });
-    return Response.json({
-      message: "Review deleted",
-      status: 200,
-      data: deleteReview,
-    });
-  } catch (err) {
-    const errResponse = err as unknown as { message: string; status: number };
-    return Response.json({
-      message: errResponse.message,
-      status: errResponse.status,
-    });
-  }
-}
-
-export async function OPTIONS(request: Request) {
-  return new Response(null, {
-    status: 200,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Max-Age": "86400",
-    },
-  });
+// DELETE /api/review?id=
+export async function DELETE(request: NextRequest): Promise<Response> {
+  const user = await getServerUser(request);
+  if (!user) return fail("Unauthorized", 401);
+  const id = request.nextUrl.searchParams.get("id");
+  if (!id) return fail("Review ID is required", 400);
+  const db = createAdminClient();
+  const { data, error } = await db
+    .from("reviews")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select("id")
+    .single();
+  if (error || !data) return fail("Review not found", 404);
+  return ok({ id }, "Review deleted");
 }

@@ -20,7 +20,8 @@ import {
   Globe,
   Mountain,
   Plane,
-  // Compass,
+  BookOpen,
+  Compass,
 } from "lucide-react";
 import Dynamic from "next/dynamic";
 import { LoadingSmall } from "@/components/ui/loading";
@@ -33,17 +34,17 @@ const CreatePost = Dynamic(
   }
 )
 
-// const CreateJournal = Dynamic(
-//   () => import("@/components/create-journal").then((mod) => mod.CreateJournal),
-//   {
-//     ssr: true,
-//     loading: () => (
-//       <Button className="bg-white dark:bg-black">
-//         <LoadingSmall />
-//       </Button>
-//     ),
-//   }
-// );
+const CreateJournal = Dynamic(
+  () => import("../shared/create-journal").then((mod) => mod.CreateJournal),
+  {
+    ssr: false,
+    loading: () => (
+      <Button className="bg-white dark:bg-black">
+        <LoadingSmall />
+      </Button>
+    ),
+  }
+);
 
 export default function ContentCreator({profileId, userImage}: { profileId: string, userImage: string }) {
   return (
@@ -94,6 +95,28 @@ export default function ContentCreator({profileId, userImage}: { profileId: stri
                    </div>
                  </Button>
                </CreatePost>
+             </div>
+             {/* Create Journey Dialog */}
+             <div className="w-full">
+               <CreateJournal profileId={profileId}>
+                 <Button
+                   variant="outline"
+                   className="w-full h-24 flex-col gap-3 bg-gradient-to-br from-orange-500/10 to-orange-600/20 border-orange-200 dark:border-orange-800 dark:bg-orange-900/10 hover:from-orange-500/20 hover:to-orange-600/30 transition-all duration-300 group"
+                 >
+                   <div className="flex items-center gap-2">
+                     <BookOpen className="w-6 h-6 text-orange-600 group-hover:scale-110 transition-transform" />
+                     <Compass className="w-5 h-5 text-orange-500" />
+                   </div>
+                   <div className="text-center">
+                     <div className="font-semibold text-orange-700 dark:text-orange-300">
+                       Create Journey
+                     </div>
+                     <div className="text-xs text-orange-600 dark:text-orange-400">
+                       Write a travel journal
+                     </div>
+                   </div>
+                 </Button>
+               </CreateJournal>
              </div>
            </div>
          </CardContent>

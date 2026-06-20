@@ -1,4 +1,3 @@
-import { Document, Types } from 'mongoose';
 import { UserDocument } from './user.d';
 
 export interface Post {
@@ -11,48 +10,51 @@ export interface Post {
   comments: Comment[];
   hashtags: string[];
   postType: 'POST' | 'JOURNAL';
-  fromGroup: Types.ObjectId;
+  fromGroup: string;
 }
 
-export interface PostDocument extends Post, Document {
-  _id: string;
+export interface PostDocument extends Post {
+  id: string;
   createdAt: Date;
   updatedAt: Date;
 }
 
 export interface IPostProps {
   __v: number;
-  _id: string;
+  id: string;
   caption: string;
   comments: Array<{
-    _id: string;
+    id: string;
     content: string;
+    edited?: boolean;
     owner: {
-      _id: string;
+      id: string;
       username: string;
+      profileImage?: string;
     };
     createdAt: string;
   }>;
   createdAt: string;
   image: string[];
   likes: Array<{
-    _id: string;
+    id: string;
     fullName: string;
     username: string;
   }>;
   location: string;
-  fromGroup?: {
-    _id: string;
-    serial: string;
-    name: string;
-  }
   owner?: {
-    _id: string;
+    id: string;
     fullName: string;
     username: string;
     profileImage?: string;
   };
   serial: string;
   updatedAt: string;
-  fromGroup?: string;
+  fromGroup?:
+    | string
+    | {
+        id: string;
+        serial: string;
+        name: string;
+      };
 }

@@ -22,7 +22,7 @@ export function User({ post }: { post: IPostProps }) {
             </Avatar>
             <div>
             <Link
-                href={`/person/${post?.owner?._id}`}
+                href={`/person/${post?.owner?.id}`}
                 className="font-semibold text-sm md:text-base"
             >
                 {post?.owner?.username}

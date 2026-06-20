@@ -34,7 +34,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { CommentBox } from "../shared/comment-box";
-import { Socket } from "socket.io-client";
+import type { SocketLike as Socket } from "@/lib/useWebsocket";
 
 const POSTS_PER_PAGE = 3;
 
@@ -46,7 +46,7 @@ export function PostCard({
 }: {
   post: IPostProps;
   session: any;
-  socket: Socket<any, any>;
+  socket: Socket;
   isSocketConnected: boolean;
 }) {
   const currentLoggedInUser = session?.user;
@@ -59,30 +59,30 @@ export function PostCard({
   ) => {
     console.log("trigger create notification");
     if (
-      !post?.owner?._id ||
-      !currentUserProfile?.data?.profile?._id
+      !post?.owner?.id ||
+      !currentUserProfile?.data?.profile?.id
     ) {
       console.log(" one of the required params were missing to invoke a notification ");
       console.log(
         isSocketConnected,
-        post?.owner?._id,
-        currentUserProfile?.data?.profile?._id
+        post?.owner?.id,
+        currentUserProfile?.data?.profile?.id
       );
       return;
     }
     try {
-      if (post.owner._id !== currentUserProfile?.data?.profile?._id) {
+      if (post.owner.id !== currentUserProfile?.data?.profile?.id) {
         socket.emit("createNotification", {
-          createdBy: currentUserProfile?.data?.profile?._id,
-          receiver: post.owner._id,
+          createdBy: currentUserProfile?.data?.profile?.id,
+          receiver: post.owner.id,
           content,
           type,
           postUrl,
           isRead: false,
         });
         console.log('created notification', {
-          createdBy: currentUserProfile?.data?.profile?._id,
-          receiver: post.owner._id,
+          createdBy: currentUserProfile?.data?.profile?.id,
+          receiver: post.owner.id,
           content,
           type,
           postUrl,
@@ -116,7 +116,7 @@ export function PostCard({
   const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>(
     {}
   );
-  const [displayedComments, setDisplayedComments] = useState(post.comments);
+  const [displayedComments, setDisplayedComments] = useState<any[]>(post.comments);
   const [isLiked, setIsLiked] = useState(
     currentLoggedInUser
       ? post.likes.some(
@@ -133,7 +133,7 @@ export function PostCard({
   const [editCommentText, setEditCommentText] = useState("");
 
   const likeMutation = useMutation({
-    mutationFn: async () => useLikeApi.likePost(post._id),
+    mutationFn: async () => useLikeApi.likePost(post.id),
     onMutate: async () => {
       const previousIsLiked = isLiked;
       const previousLikesCount = likesCount;
@@ -142,7 +142,7 @@ export function PostCard({
       createNotification(
         "liked your profile",
         "LIKE",
-        `/post/${post._id}`
+        `/post/${post.id}`
       );
       return { previousIsLiked, previousLikesCount };
     },
@@ -162,20 +162,20 @@ export function PostCard({
 
   const addCommentMutation = useMutation({
     mutationFn: async (newCommentText: string) =>
-      useCommentApi.createComment(post._id, newCommentText),
+      useCommentApi.createComment(post.id, newCommentText),
     onMutate: async (newCommentText) => {
       const newTempComment = {
-        _id: `temp-${Date.now()}`,
+        id: `temp-${Date.now()}`,
         content: newCommentText,
         owner: {
-          _id: currentLoggedInUser?.id || "",
+          id: currentLoggedInUser?.id || "",
           username: currentLoggedInUser?.username || "",
           profileImage: currentLoggedInUser?.image || "",
         },
         createdAt: dayjs().toISOString(),
       };
       setDisplayedComments((prev) => [...prev, newTempComment]);
-      setCommentInputs((prev) => ({ ...prev, [post._id]: "" }));
+      setCommentInputs((prev) => ({ ...prev, [post.id]: "" }));
       return newTempComment;
     },
     onSuccess: (response, variables, context) => {
@@ -183,11 +183,11 @@ export function PostCard({
         createNotification(
         "commented on your post",
         "COMMENT",
-        `/post/${post._id}`
+        `/post/${post.id}`
         );
         setDisplayedComments((prev) =>
           prev.map((comment) =>
-            comment._id === context?._id
+            comment.id === context?.id
               ? {
                   ...response.data,
                   owner: response.data.owner || context?.owner,
@@ -197,14 +197,14 @@ export function PostCard({
         );
       } else {
         setDisplayedComments((prev) =>
-          prev.filter((comment) => comment._id !== context?._id)
+          prev.filter((comment) => comment.id !== context?.id)
         );
         toast.error(response.message || "Failed to add comment.");
       }
     },
     onError: (err, variables, context) => {
       setDisplayedComments((prev) =>
-        prev.filter((comment) => comment._id !== context?._id)
+        prev.filter((comment) => comment.id !== context?.id)
       );
       toast.error(
         `Failed to add comment: ${(err as any).message || "Unknown error"}`
@@ -227,7 +227,7 @@ export function PostCard({
       const previousComments = displayedComments;
       setDisplayedComments((prev) =>
         prev.map((comment) =>
-          comment._id === commentId
+          comment.id === commentId
             ? { ...comment, content: newContent, edited: true }
             : comment
         )
@@ -237,7 +237,7 @@ export function PostCard({
       createNotification(
         "updated comment on your post",
         "COMMENT",
-        `/post/${post._id}`
+        `/post/${post.id}`
       );
       return { previousComments };
     },
@@ -258,7 +258,7 @@ export function PostCard({
     onMutate: async (commentId) => {
       const previousComments = displayedComments;
       setDisplayedComments((prev) =>
-        prev.filter((comment) => comment._id !== commentId)
+        prev.filter((comment) => comment.id !== commentId)
       );
       return { previousComments };
     },
@@ -347,12 +347,12 @@ export function PostCard({
 
   return (
     <Card
-      key={post._id}
+      key={post.id}
       className="border-0 border-b md:border rounded-none md:rounded-lg shadow-none md:shadow-sm bg-white dark:bg-gray-800 dark:border-gray-700"
     >
       <div className="flex items-center justify-between p-3 md:p-4">
         <div className="flex items-center gap-3">
-          <Link href={`/profile/${post?.owner?._id}`}>
+          <Link href={`/profile/${post?.owner?.id}`}>
             <Avatar className="w-8 h-8 md:w-10 md:h-10">
               <AvatarImage
                 src={post?.owner?.profileImage || "/placeholder.svg"}
@@ -364,7 +364,7 @@ export function PostCard({
             </Avatar>
           </Link>
           <div>
-            <Link href={`/profile/${post?.owner?._id}`}>
+            <Link href={`/profile/${post?.owner?.id}`}>
               <span className="font-semibold text-sm md:text-base text-gray-900 dark:text-gray-100">
                 @{post?.owner?.username}
               </span>
@@ -395,7 +395,7 @@ export function PostCard({
             >
               <PostDialog
                 post={{ _caption: post.caption, _location: post.location }}
-                id={post._id}
+                id={post.id}
                 type={"EDIT"}
               >
                 <span>Edit Post</span>
@@ -405,13 +405,13 @@ export function PostCard({
               onSelect={(e) => e.preventDefault()}
               className="dark:text-gray-100 dark:hover:bg-gray-600"
             >
-              <PostDialog id={post._id} type={"DELETE"}>
+              <PostDialog id={post.id} type={"DELETE"}>
                 <span className="text-red-600">Delete Post</span>
               </PostDialog>
             </DropdownMenuItem>
             <DropdownMenuItem className="dark:text-gray-100 dark:hover:bg-gray-600">
               <Link
-                href={`/post/${post._id}?caption=${post.caption
+                href={`/post/${post.id}?caption=${post.caption
                   .split(/ /g)
                   .slice(0, 8)
                   .join("-")}`}
@@ -453,7 +453,7 @@ export function PostCard({
               variant="ghost"
               size="icon"
               className="w-8 h-8 p-0 dark:text-gray-400 dark:hover:bg-gray-700"
-              onClick={() => toggleComments(post._id)}
+              onClick={() => toggleComments(post.id)}
             >
               <MessageCircle className="w-6 h-6" />
             </Button>
@@ -481,7 +481,7 @@ export function PostCard({
         <div className="space-y-1">
           {displayedComments.map((comment, index) => (
             <div
-              key={comment._id || `initial-comment-${index}`}
+              key={comment.id || `initial-comment-${index}`}
               className="text-sm group text-gray-800 dark:text-gray-200"
             >
               <div className="flex items-start justify-between">
@@ -489,7 +489,7 @@ export function PostCard({
                   <span className="font-semibold mr-2 dark:text-gray-100">
                     {comment.owner?.username || session?.user?.username}
                   </span>
-                  {editingComment?.commentId === comment._id &&
+                  {editingComment?.commentId === comment.id &&
                   editingComment?.commentIndex === index ? (
                     <div className="mt-1">
                       <input
@@ -542,7 +542,7 @@ export function PostCard({
                 {currentLoggedInUser &&
                   comment.owner?.username === currentLoggedInUser.username &&
                   !(
-                    editingComment?.commentId === comment._id &&
+                    editingComment?.commentId === comment.id &&
                     editingComment?.commentIndex === index
                   ) && (
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity ml-2">
@@ -563,7 +563,7 @@ export function PostCard({
                           <DropdownMenuItem
                             onClick={() =>
                               handleEditComment(
-                                comment._id,
+                                comment.id,
                                 index,
                                 comment.content
                               )
@@ -574,7 +574,7 @@ export function PostCard({
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() =>
-                              handleDeleteComment(comment._id, index)
+                              handleDeleteComment(comment.id, index)
                             }
                             className="text-red-600 dark:text-red-400 dark:hover:bg-gray-600"
                           >
@@ -588,9 +588,9 @@ export function PostCard({
             </div>
           ))}
 
-          {showComments[post._id] && (
+          {showComments[post.id] && (
             <CommentBox
-              postId={post._id}
+              postId={post.id}
               currentLoggedInUser={currentLoggedInUser}
               commentInputs={commentInputs}
               handleCommentInputChange={handleCommentInputChange}
@@ -600,11 +600,11 @@ export function PostCard({
             />
           )}
 
-          {!showComments[post._id] && displayedComments.length > 2 && (
+          {!showComments[post.id] && displayedComments.length > 2 && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => toggleComments(post._id)}
+              onClick={() => toggleComments(post.id)}
               className="text-xs text-gray-500 mt-1 h-auto p-0 dark:text-gray-400 dark:hover:bg-gray-700"
             >
               View all {displayedComments.length} comments

@@ -6,15 +6,15 @@ import PostPage from "./_component";
 export async function generateMetadata({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
   let title = "Photo";
 
   try {
     const postData = await GetPost(id);
-    if (postData && postData.caption) {
-      const words = postData.caption.split(/\s+/).filter(Boolean);
+    if (postData && (postData as any).caption) {
+      const words = (postData as any).caption.split(/\s+/).filter(Boolean);
       title = words.slice(0, 5).join(" ");
     }
   } catch (error) {
@@ -28,7 +28,7 @@ export async function generateMetadata({
 export default async function Page({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
   try {

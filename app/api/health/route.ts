@@ -1,24 +1,14 @@
-import { runDBOperation } from "@/lib/useDB";
+import { NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
-export async function GET(request: Request) {
-  const database = await runDBOperation(async () =>
-    'database hit'
-  );
-  return Response.json({
-    message: `App running and ${database}`,
-    status: 200,
-    method: request.method,
-  });
-}
-
-export async function OPTIONS(request: Request) {
-  return new Response(null, {
-    status: 200,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Max-Age": "86400",
-    },
-  });
+export async function GET() {
+  let db = "database unreachable";
+  try {
+    const client = createAdminClient();
+    const { error } = await client.from("profiles").select("id", { count: "exact", head: true });
+    if (!error) db = "database hit";
+  } catch {
+    db = "database unreachable";
+  }
+  return NextResponse.json({ message: `App running and ${db}`, status: 200 });
 }

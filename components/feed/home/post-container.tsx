@@ -6,7 +6,7 @@ import {
   useFeedAPI,
   useUserApi,
 } from "@/lib/requests";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -144,9 +144,9 @@ export function PostContainer() {
       {posts.length > 0
         ? posts.map((postItem) => (
             <PostCardV2
-              key={postItem._id}
+              key={postItem.id}
               post={postItem}
-              session={session}
+              session={session as any}
               currentUserProfile={currentUserProfile}
               userImage={userImage}
               socket={socket}

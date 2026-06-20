@@ -1,5 +1,5 @@
 "use client";
-import { signOut, useSession } from "next-auth/react";
+import { signOut, useSession } from "@/lib/auth/session";
 import React, { useState } from "react";
 import { MobileNavigation } from "./mobile/mobile-navigation";
 import { DesktopSidebar } from "./desktop-sidebar";
@@ -18,7 +18,7 @@ export default function LayoutProviders({
 }) {
   const router = useRouter();
   const [showSearchModal, setShowSearchModal] = useState(false);
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
 
   const {
     data: userData,
@@ -51,7 +51,7 @@ export default function LayoutProviders({
     toast.success("Come back soon!");
   };
 
-  if (session?.status === "loading" || isLoading) {
+  if (status === "loading" || isLoading) {
     return <>{children}</>;
   }
 

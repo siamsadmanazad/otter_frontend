@@ -1,8 +1,8 @@
 export interface ReviewDocument {
-  _id: string;
+  id: string;
   serial: string;
   user: {
-    _id: string;
+    id: string;
     fullName: string;
     username: string;
     email: string;
@@ -25,7 +25,7 @@ export interface ReviewDocument {
   title?: string;
   description?: string;
   media?: {
-    _id: string;
+    id: string;
     url: string;
   }[];
   createdAt: string;

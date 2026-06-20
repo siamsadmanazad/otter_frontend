@@ -3,7 +3,7 @@
 import { useTribeAPI } from "@/lib/requests";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "../ui/button";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 import { LoadingSmall } from "../ui/loading";
 import { useTribeStore } from "./tribe.hooks";
 import { useEffect } from "react";

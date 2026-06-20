@@ -59,23 +59,28 @@ export default function Settings() {
                 </p>
               </div>
             </Link>
-            {/* Dimmed sections */}
-            <div className="p-4 border rounded-lg opacity-50 grayscale cursor-not-allowed dark:border-gray-700">
-              <h3 className="font-semibold mb-2 dark:text-gray-100">Notifications</h3>
-              <p className="text-gray-600 dark:text-gray-400">
-                Control how you receive notifications.
-              </p>
-            </div>
-            <div className="p-4 border rounded-lg opacity-50 grayscale cursor-not-allowed dark:border-gray-700">
-              <h3 className="font-semibold mb-2 dark:text-gray-100">Privacy</h3>
-              <p className="text-gray-600 dark:text-gray-400">
-                Manage your privacy and data settings.
-              </p>
-            </div>
-            <div className="p-4 border rounded-lg opacity-50 grayscale cursor-not-allowed dark:border-gray-700">
-              <h3 className="font-semibold mb-2 dark:text-gray-100">Business</h3>
-              <p className="text-gray-600 dark:text-gray-400">Customize your ecommerce experience.</p>
-            </div>
+            <Link href="/settings/notifications">
+              <div className="p-4 border rounded-lg dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                <h3 className="font-semibold mb-2 dark:text-gray-100">Notifications</h3>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Control how you receive notifications.
+                </p>
+              </div>
+            </Link>
+            <Link href="/settings/privacy">
+              <div className="p-4 border rounded-lg dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                <h3 className="font-semibold mb-2 dark:text-gray-100">Privacy</h3>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Manage your privacy and data settings.
+                </p>
+              </div>
+            </Link>
+            <Link href="/settings/business">
+              <div className="p-4 border rounded-lg dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                <h3 className="font-semibold mb-2 dark:text-gray-100">Business</h3>
+                <p className="text-gray-600 dark:text-gray-400">Customize your ecommerce experience.</p>
+              </div>
+            </Link>
           </CardContent>
         </Card>
 

@@ -25,14 +25,18 @@ const securityHeaders = [
 
 const nextConfig = {
   devIndicators: false,
+  // TypeScript errors now BLOCK the build (tsc --noEmit is clean as of W0).
+  // ESLint is still not enforced on build (legacy style/lint debt; tracked separately).
   eslint: {
     ignoreDuringBuilds: true,
   },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   images: {
-    unoptimized: true,
+    remotePatterns: [
+      { protocol: "https", hostname: "oveptqgoyhpgvbdfqenf.supabase.co" },
+      { protocol: "https", hostname: "lh3.googleusercontent.com" },
+      { protocol: "https", hostname: "picsum.photos" },
+      { protocol: "https", hostname: "i.pravatar.cc" },
+    ],
   },
   async headers() {
     return [

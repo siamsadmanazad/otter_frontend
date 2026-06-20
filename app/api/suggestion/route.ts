@@ -1,46 +1,42 @@
 import { NextRequest } from "next/server";
-import { getSuggestionData } from "./action";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { ok, fail } from "@/lib/api/http";
 
-export async function POST(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
+// POST /api/suggestion?profile=&page=&limit=  body { userId }
+// Suggests users near the requester's location. Returns { users: [...] }.
+export async function POST(request: NextRequest): Promise<Response> {
+  try {
+    const sp = request.nextUrl.searchParams;
+    const profileFilter = sp.get("profile");
+    const limit = parseInt(sp.get("limit") ?? "10", 10);
+    const { userId } = (await request.json().catch(() => ({}))) as { userId?: string };
 
-  const profileFilter = searchParams.get("profile") ?? null;
-  const groupFilter = searchParams.get("group") ?? null;
-  const shopFilter = searchParams.get("shop") ?? null;
-  const hashtags = searchParams.get("hashtags") ?? null;
-
-  const page = parseInt(searchParams.get("page") ?? "1", 10);
-  const limit = parseInt(searchParams.get("limit") ?? "10", 10);
-
-  const user: { userId?: string } = await request.json();
-
-  const data = await getSuggestionData({
-    filters: {
-      profileFilter,
-      groupFilter,
-      shopFilter,
-      hashtags,
-      page,
-      limit,
-      userId: user.userId ?? "",
-    },
-  });
-
-  return Response.json({
-    message: "Hello World",
-    status: 200,
-    data,
-  });
-}
-
-export async function OPTIONS(request: NextRequest) {
-  return new Response(null, {
-    status: 200,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Max-Age": "86400",
-    },
-  });
+    const result: { users: unknown[] } = { users: [] };
+    if (profileFilter && userId) {
+      const db = createAdminClient();
+      const { data: me } = await db.from("profiles").select("location").eq("id", userId).maybeSingle();
+      if (me?.location) {
+        const { data } = await db
+          .from("profiles")
+          .select("id, username, full_name, profile_image, location, bio, role")
+          .ilike("location", `%${me.location}%`)
+          .neq("id", userId)
+          .order("created_at", { ascending: false })
+          .limit(limit);
+        result.users = ((data ?? []) as any[]).map((u) => ({
+          id: u.id,
+          username: u.username,
+          fullName: u.full_name,
+          profileImage: u.profile_image,
+          location: u.location,
+          bio: u.bio,
+          role: u.role,
+        }));
+      }
+    }
+    return ok(result, "Suggestions");
+  } catch (e) {
+    console.error("POST /api/suggestion error:", e);
+    return fail("Internal server error", 500);
+  }
 }

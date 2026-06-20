@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { PostCard } from "@/components/feed/profile/post-card";
 import { useWebsocket } from "@/lib/useWebsocket";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 
 export default function PostPage({ postData }: { postData: any }) {
   const { data: session } = useSession();

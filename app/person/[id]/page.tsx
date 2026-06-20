@@ -1,20 +1,16 @@
-import { authOptions } from "@/auth";
 import { PersonPage } from "@/components/person-page";
-import { getServerSession } from "next-auth";
+import { getServerUser } from "@/lib/auth/server";
 
 interface PersonPageProps {
-  params: {
-    id: string;
-  };
+  params: Promise<{ id: string }>;
 }
 
 export default async function Person({ params }: PersonPageProps) {
-  const session = await getServerSession(authOptions);
+  const user = await getServerUser();
   const { id } = await params;
 
-  const isSelfProfile = id === "me" || id === session?.user?.id;
-
-  const personId = isSelfProfile ? (session?.user?.id as string) : id;
+  const isSelfProfile = id === "me" || id === user?.id;
+  const personId = isSelfProfile ? (user?.id as string) : id;
 
   return <PersonPage personId={personId} selfProfile={isSelfProfile} />;
 }

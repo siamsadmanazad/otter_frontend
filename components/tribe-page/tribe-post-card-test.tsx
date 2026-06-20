@@ -22,7 +22,7 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { IPostProps } from "@/types/post";
 import { toast } from "sonner";
-import { Socket } from "socket.io-client";
+import type { SocketLike as Socket } from "@/lib/useWebsocket";
 import { Textarea } from "@/components/ui/textarea";
 
 dayjs.extend(relativeTime);
@@ -39,7 +39,7 @@ export function TribePostCard({
     currentUserProfile: any;
     session: any | null;
     userImage: any;
-    socket: Socket<any, any>;
+    socket: Socket;
     isSocketConnected: boolean;
 }) {
     const currentLoggedInUser = session?.user;
@@ -86,18 +86,18 @@ export function TribePostCard({
         postUrl: string
     ) => {
         console.log("trigger create notification");
-        if (!post?.owner?._id || !currentUserProfile?.data?.profile?._id) {
+        if (!post?.owner?.id || !currentUserProfile?.data?.profile?.id) {
             console.log(
                 "one of the required params were missing to invoke a notification"
             );
-            console.log(isSocketConnected, post?.owner?._id, currentUserProfile?.data?.profile?._id);
+            console.log(isSocketConnected, post?.owner?.id, currentUserProfile?.data?.profile?.id);
             return;
         }
         try {
-            if (post.owner._id !== currentUserProfile?.data?.profile?._id) {
+            if (post.owner.id !== currentUserProfile?.data?.profile?.id) {
                 socket.emit("createNotification", {
-                    createdBy: currentUserProfile?.data?.profile?._id,
-                    receiver: post.owner._id,
+                    createdBy: currentUserProfile?.data?.profile?.id,
+                    receiver: post.owner.id,
                     content,
                     type,
                     postUrl,
@@ -145,7 +145,7 @@ export function TribePostCard({
                     ...oldData,
                     pages: oldData.pages.map((page: IPostProps[]) =>
                         page.map((p) =>
-                            p._id === postId
+                            p.id === postId
                                 ? { ...p, comments: [...p.comments, temporaryComment] }
                                 : p
                         )
@@ -193,7 +193,7 @@ export function TribePostCard({
                     ...oldData,
                     pages: oldData.pages.map((page: IPostProps[]) =>
                         page.map((p) => {
-                            if (p._id === postId) {
+                            if (p.id === postId) {
                                 const newLikes = isLiked
                                     ? p.likes.filter(
                                         (like) => like.username !== currentLoggedInUser?.username
@@ -236,7 +236,7 @@ export function TribePostCard({
             toast.error("You must be logged in to like a post.");
             return;
         }
-        likeMutation.mutate(post._id);
+        likeMutation.mutate(post.id);
     };
 
     const updateCommentMutation = useMutation({
@@ -260,11 +260,11 @@ export function TribePostCard({
                     ...oldData,
                     pages: oldData.pages.map((page: IPostProps[]) =>
                         page.map((p) =>
-                            p._id === post._id
+                            p.id === post.id
                                 ? {
                                     ...p,
                                     comments: p.comments.map((comment) =>
-                                        comment._id === commentId
+                                        comment.id === commentId
                                             ? {
                                                 ...comment,
                                                 content: updatedCommentData.content,
@@ -279,7 +279,7 @@ export function TribePostCard({
                 };
             });
             toast.success("Comment updated successfully!");
-            createNotification("updated comment on your post", "COMMENT", `/post/${post._id}`);
+            createNotification("updated comment on your post", "COMMENT", `/post/${post.id}`);
             setEditingComment(null);
             setEditCommentText("");
         },
@@ -337,11 +337,11 @@ export function TribePostCard({
                     ...oldData,
                     pages: oldData.pages.map((page: IPostProps[]) =>
                         page.map((p) =>
-                            p._id === post._id
+                            p.id === post.id
                                 ? {
                                     ...p,
                                     comments: p.comments.filter(
-                                        (comment) => comment._id !== deletedCommentId
+                                        (comment) => comment.id !== deletedCommentId
                                     ),
                                 }
                                 : p
@@ -363,7 +363,7 @@ export function TribePostCard({
     const isValidId = (id?: string) => id && id.length > 0;
 
     return (
-        <Card key={post._id} className="dark:bg-gray-900 dark:border-gray-800">
+        <Card key={post.id} className="dark:bg-gray-900 dark:border-gray-800">
             <CardContent className="p-0">
                 {/* Post Header */}
                 <div className="p-4 pb-0">
@@ -447,7 +447,7 @@ export function TribePostCard({
                                     variant="ghost"
                                     size="sm"
                                     className="gap-2 dark:hover:bg-gray-800 dark:text-gray-400 dark:hover:text-white"
-                                    onClick={() => toggleComments(post._id)}
+                                    onClick={() => toggleComments(post.id)}
                                 >
                                     <MessageCircle className="w-4 h-4" />
                                     {post.comments.length}
@@ -464,7 +464,7 @@ export function TribePostCard({
                     </div>
 
                     {/* Comments Section */}
-                    {showComments[post._id] && (
+                    {showComments[post.id] && (
                         <div className="px-4 pb-4">
                             {/* Add Comment Input */}
                             <div className="flex items-center gap-2 mb-4">
@@ -480,9 +480,9 @@ export function TribePostCard({
                                 <div className="relative flex-1">
                                     <Textarea
                                         placeholder="Write a comment..."
-                                        value={commentInputs[post._id] || ""}
+                                        value={commentInputs[post.id] || ""}
                                         onChange={(e) =>
-                                            handleCommentInputChange(post._id, e.target.value)
+                                            handleCommentInputChange(post.id, e.target.value)
                                         }
                                         className="min-h-[40px] pr-12 dark:bg-gray-800 dark:border-gray-700 dark:text-white"
                                     />
@@ -490,8 +490,8 @@ export function TribePostCard({
                                         variant="ghost"
                                         size="sm"
                                         className="absolute top-1/2 right-2 -translate-y-1/2 rounded-full dark:hover:bg-gray-700"
-                                        onClick={() => handleAddComment(post._id)}
-                                        disabled={!commentInputs[post._id]?.trim()}
+                                        onClick={() => handleAddComment(post.id)}
+                                        disabled={!commentInputs[post.id]?.trim()}
                                     >
                                         Post
                                     </Button>
@@ -502,7 +502,7 @@ export function TribePostCard({
                             {post.comments.length > 0 && (
                                 <div className="mt-4 space-y-4">
                                     {commentsToDisplay.map((comment, index) => (
-                                        <div key={comment._id} className="flex items-start gap-3">
+                                        <div key={comment.id} className="flex items-start gap-3">
                                             <Avatar className="w-8 h-8">
                                                 <AvatarImage
                                                     src={comment.owner?.profileImage || "/placeholder.svg"}
@@ -525,7 +525,7 @@ export function TribePostCard({
                                                         </Badge>
                                                     )}
                                                 </div>
-                                                {editingComment?.commentId === comment._id ? (
+                                                {editingComment?.commentId === comment.id ? (
                                                     <div className="flex flex-col gap-2 mt-1">
                                                         <Textarea
                                                             value={editCommentText}
@@ -555,13 +555,13 @@ export function TribePostCard({
                                                         <p className="text-sm text-gray-700 dark:text-gray-300">
                                                             {comment.content}
                                                         </p>
-                                                        {currentLoggedInUser?.id === comment.owner._id && isValidId(comment._id) && (
+                                                        {currentLoggedInUser?.id === comment.owner.id && isValidId(comment.id) && (
                                                             <div className="flex gap-1 ml-2">
                                                                 <Button
                                                                     variant="ghost"
                                                                     size="icon"
                                                                     className="w-6 h-6 dark:hover:bg-gray-800"
-                                                                    onClick={() => handleEditComment(comment._id, index, comment.content)}
+                                                                    onClick={() => handleEditComment(comment.id, index, comment.content)}
                                                                 >
                                                                     <Edit className="w-3 h-3 text-gray-500" />
                                                                 </Button>
@@ -569,7 +569,7 @@ export function TribePostCard({
                                                                     variant="ghost"
                                                                     size="icon"
                                                                     className="w-6 h-6 dark:hover:bg-gray-800"
-                                                                    onClick={() => handleDeleteComment(comment._id)}
+                                                                    onClick={() => handleDeleteComment(comment.id)}
                                                                 >
                                                                     <Trash2 className="w-3 h-3 text-red-500" />
                                                                 </Button>

@@ -1,9 +1,6 @@
-import { Document } from 'mongoose';
-import type { v4 as uuidv4 } from 'uuid';
-
-export interface UserDocument extends Document {
-  _id: string;
-  serial: uuidv4;
+export interface UserDocument {
+  id: string;
+  serial: string;
   bio: string;
   location: string;
   fullName: string;
@@ -25,8 +22,8 @@ export interface UserDocument extends Document {
 }
 
 export interface IUserProfile {
-  _id: string;
-  serial: uuidv4;
+  id: string;
+  serial: string;
   bio: string;
   location: string;
   fullName: string;
@@ -45,12 +42,24 @@ export interface IUserProfile {
   coverImage: string;
   profileImage: string;
   role: "USER" | "BUSINESS";
+  verified?: boolean;
+  stats?: {
+    totalLikes?: number;
+    avgLikes?: number;
+    engagement?: number;
+  };
   profile: {
+    id?: string;
     postsCount: number;
     commentsCount: number;
     followersCount: number;
     followingCount: number;
     createdAt: Date;
     updatedAt: Date;
+    // Legacy populated arrays — the rebuilt API returns counts, not arrays, so
+    // these are optional and may be absent at runtime (reads guard accordingly).
+    posts?: any[];
+    followers?: any[];
+    following?: any[];
   };
 }

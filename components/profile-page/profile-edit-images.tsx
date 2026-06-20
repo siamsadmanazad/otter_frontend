@@ -147,7 +147,7 @@ export function ProfileEditImages({
         fileSrc = URL.createObjectURL(file);
       }
       if (file) {
-        // const fileSrc = URL.createObjectURL(file);
+        if (!fileSrc) return;
         const img = document.createElement("img");
         img.src = fileSrc;
         img.crossOrigin = "anonymous";
@@ -164,18 +164,18 @@ export function ProfileEditImages({
             );
             if (isExplicit) {
               toast.error("Explicit image detected, please upload a safe image.");
-              URL.revokeObjectURL(fileSrc);
+              if (fileSrc) URL.revokeObjectURL(fileSrc);
             } else {
               setImageFile(processedFile);
               setValue("image", processedFile, { shouldValidate: true });
-              setImagePreview(fileSrc);
+              setImagePreview(fileSrc ?? null);
               clearErrors("image");
             }
           } else {
             console.warn("NSFW model not loaded, skipping content check.");
             setImageFile(processedFile);
             setValue("image", processedFile, { shouldValidate: true });
-            setImagePreview(fileSrc);
+            setImagePreview(fileSrc ?? null);
             clearErrors("image");
           }
         };
@@ -183,7 +183,7 @@ export function ProfileEditImages({
         img.onerror = () => {
           console.error("Error loading image for NSFW check:", file.name);
           toast.error(`Failed to load image: ${file.name}.`);
-          URL.revokeObjectURL(fileSrc);
+          if (fileSrc) URL.revokeObjectURL(fileSrc);
         };
       }
     },
@@ -373,7 +373,7 @@ export function ProfileEditImages({
 
               {errors.image && (
                 <span className="text-red-500 text-sm">
-                  {errors.image.message}
+                  {String(errors.image.message ?? "")}
                 </span>
               )}
             </div>

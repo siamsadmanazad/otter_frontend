@@ -2,7 +2,7 @@
 
 import { useCompanionAPI } from "@/lib/requests";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { useEffect, useRef } from "react";
@@ -98,7 +98,7 @@ export function SuggestedUsers() {
     <div className="flex flex-col space-y-4 p-4 sticky top-4">
       {allSuggestedUsers.length > 0 ? (
         allSuggestedUsers.map((profile) => (
-          <div key={profile._id} className="flex items-center justify-between">
+          <div key={profile.id} className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Avatar className="w-8 h-8">
                 <AvatarImage
@@ -110,13 +110,13 @@ export function SuggestedUsers() {
               </Avatar>
               <div className="flex flex-col">
                 <Link
-                  href={`/person/${profile.user._id}`}
+                  href={`/person/${profile.user.id}`}
                   className="font-semibold text-sm text-gray-900 dark:text-gray-100 hover:text-blue-500 duration-300"
                 >
                   {profile.user?.username}
                 </Link>
                 <Link
-                  href={`/person/${profile.user._id}`}
+                  href={`/person/${profile.user.id}`}
                   className="text-xs text-gray-500 dark:text-gray-400 hover:text-blue-500 duration-300"
                 >
                   {profile.user?.fullName}
@@ -124,7 +124,7 @@ export function SuggestedUsers() {
               </div>
             </div>
             <FollowButton
-              targetUserId={profile.user._id}
+              targetUserId={profile.user.id}
               initialIsFollowing={false}
             />
           </div>

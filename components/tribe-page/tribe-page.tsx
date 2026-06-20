@@ -105,10 +105,10 @@ export function TribePage_v1({ tribeData }: TribePageProps) {
             <div className="flex gap-2 mt-4 md:mt-0 md:mb-4">
               <TribeMemberButton tribeId={tribeData.serial} />
               {
-                // isTribeMember && <CreatePost groupId={tribeData._id} profileId={session?.user?.id} />
+                // isTribeMember && <CreatePost groupId={tribeData.id} profileId={session?.user?.id} />
               }
               {
-                // isTribeAdmin && <CreatePost groupId={tribeData._id} profileId={session?.user?.id} />
+                // isTribeAdmin && <CreatePost groupId={tribeData.id} profileId={session?.user?.id} />
               }
               <Button variant="outline" size="icon">
                 <Share className="w-4 h-4" />
@@ -221,7 +221,7 @@ export function TribePage_v1({ tribeData }: TribePageProps) {
 
               {/* Posts */}
               {tribeData.privacy === "PUBLIC" || isTribeMember || isTribeAdmin ? (
-                <TribePosts tribeId={tribeData._id} />
+                <TribePosts tribeId={tribeData.id} />
               ) : (
                 <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                   <p className="text-lg">You must join this tribe to view its posts.</p>

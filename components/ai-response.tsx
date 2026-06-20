@@ -13,7 +13,7 @@ interface IAnswerProps {
 
 export const AIResponse = ({ answer }: { answer: IAnswerProps }) => {
   if (!answer) {
-    <div></div>;
+    return <div></div>;
   } else {
     return (
       <div className="h-[35vh] my-8 overflow-y-auto">

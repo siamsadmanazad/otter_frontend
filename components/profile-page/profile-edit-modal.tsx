@@ -81,7 +81,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Badge } from "../ui/badge";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 import { Loading } from "../ui/loading";
 
 export function ProfileEditForm({ type, defaultData, onClose }: ProfileEditFormProps) {
@@ -139,7 +139,7 @@ export function ProfileEditForm({ type, defaultData, onClose }: ProfileEditFormP
     }
 
     // Only search if location input is not empty
-    if (locationData?.location.trim() !== "") {
+    if (locationData?.location?.trim() !== "") {
       setIsSearchingLocations(true);
       debounceTimeoutRef.current = setTimeout(async () => {
         try {
@@ -213,8 +213,8 @@ export function ProfileEditForm({ type, defaultData, onClose }: ProfileEditFormP
     onSuccess: (data) => {
       toast.success("Profile updated successfully!");
       // Invalidate the 'user' query for the specific user ID to refetch latest data
-      queryClient.invalidateQueries({ queryKey: ["user", defaultData?._id] });
-      onClose(); // Close the modal on successful submission
+      queryClient.invalidateQueries({ queryKey: ["user", defaultData?.id] });
+      onClose?.(); // Close the modal on successful submission
     },
     onError: (error) => {
       console.error("Error updating profile:", error);
@@ -222,7 +222,7 @@ export function ProfileEditForm({ type, defaultData, onClose }: ProfileEditFormP
     },
     onSettled: () => {
       // Optional: Invalidate again on settled to ensure consistency, though onSuccess already does it
-      queryClient.invalidateQueries({ queryKey: ["user", defaultData?._id] });
+      queryClient.invalidateQueries({ queryKey: ["user", defaultData?.id] });
     },
   });
 
@@ -347,7 +347,7 @@ export function ProfileEditForm({ type, defaultData, onClose }: ProfileEditFormP
               }}
             />
             <CommandList>
-              {isSearchingLocations && locationData.location.trim() !== "" ? (
+              {isSearchingLocations && locationData.location?.trim() !== "" ? (
                 <CommandEmpty className="flex items-center justify-center p-4">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Searching...
                 </CommandEmpty>
@@ -646,7 +646,7 @@ export function ProfileEditFormNoModal() {
       clearTimeout(debounceTimeoutRef.current);
     }
 
-    if (locationData?.location.trim() !== "") {
+    if (locationData?.location?.trim() !== "") {
       setIsSearchingLocations(true);
       debounceTimeoutRef.current = setTimeout(async () => {
         try {
@@ -716,14 +716,14 @@ export function ProfileEditFormNoModal() {
     },
     onSuccess: (data) => {
       toast.success("Profile updated successfully!");
-      queryClient.invalidateQueries({ queryKey: ["user", defaultData?._id] });
+      queryClient.invalidateQueries({ queryKey: ["user", defaultData?.id] });
     },
     onError: (error) => {
       console.error("Error updating profile:", error);
       toast.error(error.message || "An error occurred while updating profile.");
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["user", defaultData?._id] });
+      queryClient.invalidateQueries({ queryKey: ["user", defaultData?.id] });
     },
   });
 
@@ -832,7 +832,7 @@ export function ProfileEditFormNoModal() {
               className="dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:placeholder-gray-400"
             />
             <CommandList className="dark:bg-gray-800">
-              {isSearchingLocations && locationData.location.trim() !== "" ? (
+              {isSearchingLocations && locationData.location?.trim() !== "" ? (
                 <CommandEmpty className="flex items-center justify-center p-4 dark:text-gray-300">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Searching...
                 </CommandEmpty>

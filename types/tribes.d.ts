@@ -1,5 +1,3 @@
-import { Document, Types } from "mongoose";
-
 export type TribeCategory =
   | "JOURNEY"
   | "LOCATION"
@@ -12,8 +10,8 @@ export type TribeCategory =
 
 export type TribePrivacy = "PUBLIC" | "PRIVATE";
 
-export interface TribeDocument extends Document{
-  _id: string;
+export interface TribeDocument {
+  id: string;
   serial: string;
   description?: string;
   category: TribeCategory;
@@ -21,16 +19,16 @@ export interface TribeDocument extends Document{
   coverImage?: string;
   profileImage?: string;
   name: string;
-  users: Types.ObjectId[];
-  posts: Types.ObjectId[];
-  createdBy: Types.ObjectId;
+  users: string[];
+  posts: string[];
+  createdBy: string;
   privacy: TribePrivacy;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface ITribePlain {
-  _id: string;
+  id: string;
   serial: string;
   description?: string;
   category: TribeCategory;
@@ -40,7 +38,7 @@ export interface ITribePlain {
   name: string;
   users?: string[];
   posts?: string[];
-  createdBy: Types.ObjectId;
+  createdBy: string;
   privacy: TribePrivacy;
   createdAt: string;
   updatedAt: string;
@@ -51,7 +49,7 @@ export interface TribePageProps {
 }
 
 export interface ITribeData {
-  _id: string;
+  id: string;
   description: string;
   category: string;
   tags: string[];
@@ -70,7 +68,7 @@ export interface ITribeData {
 
 export interface ITribe {
   __v: number;
-  _id: string;
+  id: string;
   category: string;
   coverImage: string;
   createdAt: string;

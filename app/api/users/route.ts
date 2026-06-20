@@ -1,163 +1,89 @@
 import { NextRequest } from "next/server";
-import { runDBOperation, runDBOperationWithTransaction } from "@/lib/useDB";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getServerUser } from "@/lib/auth/server";
+import { ok, fail, mapProfile } from "@/lib/api/http";
 
-import profileSchema from "@/utils/schema/profile-schema";
-import userSchema from "@/utils/schema/user-schema";
-import mongoose from "mongoose";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/auth";
-
-import "@/utils/schema/comments-schema";
-import "@/utils/schema/like-schema";
-import "@/utils/schema/posts-schema";
-
-interface UserDataOptimized {
-  _id: string;
-  username?: string;
-  fullName?: string;
-  profileImage?: string;
-  profile: {
-    postsCount: number;
-    commentsCount: number;
-    followersCount: number;
-    followingCount: number;
-    createdAt: Date;
-    updatedAt: Date;
-    _id: number;
-  };
-  [key: string]: any;
-}
-
+// GET /api/users?id=<uuid> — public profile + aggregate counts (IUserProfile shape)
 export async function GET(request: NextRequest): Promise<Response> {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const userId = searchParams.get("id");
+    const userId = request.nextUrl.searchParams.get("id");
+    if (!userId?.trim()) return fail("User ID is required", 400);
+    if (!UUID_RE.test(userId)) return fail("Invalid user ID format", 400);
 
-    if (!userId?.trim()) {
-      return new Response(
-        JSON.stringify({ message: "User ID is required", status: 400 }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
-    }
+    const db = createAdminClient();
+    const { data: profile, error } = await db
+      .from("profiles")
+      .select(
+        "id, serial, username, full_name, profile_image, cover_image, bio, location, socials, email, active, role, reputation, created_at, updated_at"
+      )
+      .eq("id", userId)
+      .single();
 
-    // Validate ObjectId format
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return new Response(
-        JSON.stringify({ message: "Invalid user ID format", status: 400 }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
-    }
+    if (error || !profile) return fail("User not found", 404);
 
-    const data = await runDBOperation(async () => {
-      const [user, userProfile] = await Promise.all([
-        userSchema
-          .findById(userId)
-          .select(
-            "username fullName profileImage coverImage _id bio location socials email active role createdAt updatedAt"
-          )
-          .lean()
-          .exec() as any,
+    const [posts, comments, followers, following] = await Promise.all([
+      db.from("posts").select("id", { count: "exact", head: true }).eq("owner_id", userId),
+      db.from("comments").select("id", { count: "exact", head: true }).eq("owner_id", userId),
+      db.from("follows").select("follower_id", { count: "exact", head: true }).eq("following_id", userId),
+      db.from("follows").select("following_id", { count: "exact", head: true }).eq("follower_id", userId),
+    ]);
 
-        profileSchema
-          .aggregate([
-            { $match: { user: new mongoose.Types.ObjectId(userId) } },
-            {
-              $project: {
-                _id: 1,
-                postsCount: { $size: "$posts" },
-                commentsCount: { $size: "$comments" },
-                followersCount: { $size: "$followers" },
-                followingCount: { $size: "$following" },
-                createdAt: 1,
-                updatedAt: 1,
-              },
-            },
-          ])
-          .exec(),
-      ]);
-
-      if (!user) {
-        throw new Error("User not found");
-      }
-
-      const profileCounts = userProfile[0] || {};
-
-      const userData: UserDataOptimized = {
-        ...user,
-        profile: {
-          _id: profileCounts._id,
-          postsCount: profileCounts.postsCount || 0,
-          commentsCount: profileCounts.commentsCount || 0,
-          followersCount: profileCounts.followersCount || 0,
-          followingCount: profileCounts.followingCount || 0,
-          createdAt: profileCounts.createdAt,
-          updatedAt: profileCounts.updatedAt,
-        },
-      };
-
-      return userData;
-    });
-
-    return Response.json({
-      message: "User data retrieved successfully",
-      status: 200,
-      data,
-    });
-  } catch (error) {
-    console.error("Error fetching user data:", error);
-
-    const errorMessage =
-      error instanceof Error ? error.message : "Internal server error";
-    const statusCode = errorMessage === "User not found" ? 404 : 500;
-
-    return new Response(
-      JSON.stringify({
-        message: errorMessage,
-        status: statusCode,
-      }),
-      {
-        status: statusCode,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    const data = {
+      ...mapProfile(profile),
+      profile: {
+        id: profile.id,
+        postsCount: posts.count ?? 0,
+        commentsCount: comments.count ?? 0,
+        followersCount: followers.count ?? 0,
+        followingCount: following.count ?? 0,
+        createdAt: profile.created_at,
+        updatedAt: profile.updated_at,
+      },
+    };
+    return ok(data, "User data retrieved successfully");
+  } catch (e) {
+    console.error("GET /api/users error:", e);
+    return fail("Internal server error", 500);
   }
 }
 
-export async function POST(request: Request) {
-  return Response.json({
-    message: "Hello World",
-    status: 200,
-    method: request.method,
-  });
-}
+// PATCH /api/users — update own profile (camelCase body -> snake_case columns)
+export async function PATCH(request: NextRequest): Promise<Response> {
+  try {
+    const user = await getServerUser(request);
+    if (!user) return fail("Unauthorized", 401);
 
-export async function PATCH(request: NextRequest) {
-  const postBody = await request.json();
-  const userId = await getServerSession(authOptions);
-  const data = await runDBOperationWithTransaction(async (session) => {
-    const user = await userSchema.findByIdAndUpdate(
-      { _id: userId?.user?.id },
-      { $set: postBody },
-      { new: true, session }
-    );
-    return user;
-  });
-  return Response.json({
-    message: "Profile Updated!",
-    status: 200,
-    data,
-  });
-}
+    const body = await request.json();
+    const allowed: Record<string, string> = {
+      bio: "bio",
+      location: "location",
+      socials: "socials",
+      fullName: "full_name",
+      profileImage: "profile_image",
+      coverImage: "cover_image",
+    };
+    const update: Record<string, unknown> = {};
+    for (const [key, col] of Object.entries(allowed)) {
+      if (key in body) update[col] = body[key];
+    }
+    if (Object.keys(update).length === 0) return fail("No updatable fields provided", 400);
 
-export async function OPTIONS(request: Request) {
-  return new Response(null, {
-    status: 200,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Max-Age": "86400",
-    },
-  });
+    const db = createAdminClient();
+    const { data, error } = await db
+      .from("profiles")
+      .update(update)
+      .eq("id", user.id)
+      .select(
+        "id, serial, username, full_name, profile_image, cover_image, bio, location, socials, email, active, role, reputation, created_at, updated_at"
+      )
+      .single();
+
+    if (error) return fail(error.message, 500);
+    return ok(mapProfile(data), "Profile Updated!");
+  } catch (e) {
+    console.error("PATCH /api/users error:", e);
+    return fail("Internal server error", 500);
+  }
 }

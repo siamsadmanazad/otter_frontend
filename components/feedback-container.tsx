@@ -23,7 +23,7 @@ import {
   Calendar,
   Paperclip,
 } from "lucide-react";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 import { useReviewAPI } from "@/lib/requests";
 import { toast } from "sonner";
 import { getSanityMedia } from "@/lib/getSanityImage";

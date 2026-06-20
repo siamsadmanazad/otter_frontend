@@ -29,7 +29,7 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 dayjs.extend(relativeTime);
 
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth/session";
 
 import { useFollowApi, useUserApi } from "@/lib/requests";
 import PostContainer from "@/components/feed/profile";
@@ -85,16 +85,17 @@ export function PersonPage({ personId, selfProfile }: PersonPageProps) {
   const postsCount = _personData?.profile?.postsCount || 0;
 
   // Determine if the current user is following this profile
-  const isFollowingInitial =
+  const isFollowingInitial = !!(
     currentLoggedInUserId &&
-    _personData?.profile?.followers?.includes(currentLoggedInUserId);
+    _personData?.profile?.followers?.includes(currentLoggedInUserId)
+  );
   const [isFollowing, setIsFollowing] = useState(isFollowingInitial);
 
   // Update isFollowing state when personProfile changes
   useEffect(() => {
     if (_personData) {
       const followerIds = Array.isArray(_personData.profile.followers)
-        ? _personData.profile.followers.map((f: any) => f._id || f)
+        ? _personData.profile.followers.map((f: any) => f.id || f)
         : _personData.profile.followers;
       setIsFollowing(followerIds?.includes(currentLoggedInUserId) || false);
     }
@@ -128,11 +129,11 @@ export function PersonPage({ personId, selfProfile }: PersonPageProps) {
     const getUser = await useUserApi.getUser(session?.user?.id ?? "");
     if (isConnected) {
       socket.emit("createNotification", {
-        createdBy: getUser?.data?.profile?._id,
-        receiver: _personData?._id ?? "",
+        createdBy: getUser?.data?.profile?.id,
+        receiver: _personData?.id ?? "",
         content: "followed you",
         type: "FOLLOW",
-        postUrl: `/person/${getUser?.data?.profile?._id ?? ""}`,
+        postUrl: `/person/${getUser?.data?.profile?.id ?? ""}`,
         isRead: false,
       });
     }
@@ -169,10 +170,10 @@ export function PersonPage({ personId, selfProfile }: PersonPageProps) {
         queryClient.setQueryData<IUserProfile>(["user", personId], (old) => {
           if (!old) return old;
           const newFollowers = isFollowing
-            ? old.profile.followers.filter(
-                (f: any) => (f._id || f) !== currentLoggedInUserId
+            ? (old.profile.followers ?? []).filter(
+                (f: any) => (f.id || f) !== currentLoggedInUserId
               )
-            : [...old.profile.followers, currentLoggedInUserId];
+            : [...(old.profile.followers ?? []), currentLoggedInUserId];
 
           return {
             ...old,
@@ -205,9 +206,9 @@ export function PersonPage({ personId, selfProfile }: PersonPageProps) {
         queryClient.setQueryData<IUserProfile>(["user", personId], (old) => {
           if (!old) return old;
           const revertedFollowers = context.previousIsFollowing
-            ? [...old.profile.followers, currentLoggedInUserId]
-            : old.profile.followers.filter(
-                (f: any) => (f._id || f) !== currentLoggedInUserId
+            ? [...(old.profile.followers ?? []), currentLoggedInUserId]
+            : (old.profile.followers ?? []).filter(
+                (f: any) => (f.id || f) !== currentLoggedInUserId
               );
 
           return {
@@ -228,27 +229,27 @@ export function PersonPage({ personId, selfProfile }: PersonPageProps) {
   });
 
   const handleFollow = () => {
-    if (!_personData?._id) {
+    if (!_personData?.id) {
       console.error("Person data not loaded yet.");
       return;
     }
-    followMutation.mutate(_personData._id);
+    followMutation.mutate(_personData.id);
   };
 
   const { data: followersList = [], isLoading: isFollowersLoading } = useQuery<
     UserDocument[],
     Error
   >({
-    queryKey: ["followersList", _personData?._id],
+    queryKey: ["followersList", _personData?.id],
     queryFn: async () => {
-      if (!_personData?._id) return [];
+      if (!_personData?.id) return [];
       const response = await useFollowApi.getFollowersOrFollowing(
-        _personData._id,
+        _personData.id,
         "followers"
       );
       return response.data;
     },
-    enabled: activeTab === "followers" && !!_personData?._id,
+    enabled: activeTab === "followers" && !!_personData?.id,
     staleTime: 1000 * 60 * 1, // Cache followers for 1 minute
   });
 
@@ -256,16 +257,16 @@ export function PersonPage({ personId, selfProfile }: PersonPageProps) {
     UserDocument[],
     Error
   >({
-    queryKey: ["followingList", _personData?._id],
+    queryKey: ["followingList", _personData?.id],
     queryFn: async () => {
-      if (!_personData?._id) return [];
+      if (!_personData?.id) return [];
       const response = await useFollowApi.getFollowersOrFollowing(
-        _personData._id,
+        _personData.id,
         "following"
       );
       return response.data;
     },
-    enabled: activeTab === "following" && !!_personData?._id,
+    enabled: activeTab === "following" && !!_personData?.id,
     staleTime: 1000 * 60 * 1, // Cache following for 1 minute
   });
 
@@ -399,7 +400,7 @@ export function PersonPage({ personId, selfProfile }: PersonPageProps) {
                   <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-300 mb-3">
                     <FollowModal
                       type="Followers"
-                      userId={displayPersonData._id ?? ""}
+                      userId={displayPersonData.id ?? ""}
                     >
                       <span className="underline">
                         <strong>{followersCount}</strong> followers
@@ -407,7 +408,7 @@ export function PersonPage({ personId, selfProfile }: PersonPageProps) {
                     </FollowModal>
                     <FollowModal
                       type="Following"
-                      userId={displayPersonData._id ?? ""}
+                      userId={displayPersonData.id ?? ""}
                     >
                       <span className="underline">
                         <strong>{followingCount}</strong> following
@@ -650,7 +651,7 @@ export function PersonPage({ personId, selfProfile }: PersonPageProps) {
             </TabsList>
 
             <TabsContent value="posts" className="mt-6">
-              <PostContainer profileId={displayPersonData._id} />
+              <PostContainer profileId={displayPersonData.id} />
             </TabsContent>
 
             <TabsContent value="followers" className="mt-6">
@@ -667,11 +668,11 @@ export function PersonPage({ personId, selfProfile }: PersonPageProps) {
                     ) : followersList.length > 0 ? (
                       followersList.map((follower) => (
                         <div
-                          key={follower._id}
+                          key={follower.id}
                           className="flex items-center justify-between"
                         >
                           <div className="flex items-center gap-3">
-                            <Link href={`/person/${follower._id}`}>
+                            <Link href={`/person/${follower.id}`}>
                               <Avatar className="w-10 h-10 dark:bg-gray-700 dark:text-gray-300">
                                 <AvatarImage
                                   src={
@@ -687,13 +688,13 @@ export function PersonPage({ personId, selfProfile }: PersonPageProps) {
                             </Link>
                             <div>
                               <div className="flex items-center gap-2">
-                                <Link href={`/person/${follower._id}`}>
+                                <Link href={`/person/${follower.id}`}>
                                   <span className="font-semibold text-gray-900 dark:text-gray-100">
                                     {follower.fullName}
                                   </span>
                                 </Link>
                               </div>
-                              <Link href={`/person/${follower._id}`}>
+                              <Link href={`/person/${follower.id}`}>
                                 <span className="text-sm text-gray-600 dark:text-gray-300">
                                   @{follower.username}
                                 </span>
@@ -726,11 +727,11 @@ export function PersonPage({ personId, selfProfile }: PersonPageProps) {
                     ) : followingList.length > 0 ? (
                       followingList.map((following) => (
                         <div
-                          key={following._id}
+                          key={following.id}
                           className="flex items-center justify-between"
                         >
                           <div className="flex items-center gap-3">
-                            <Link href={`/person/${following._id}`}>
+                            <Link href={`/person/${following.id}`}>
                               <Avatar className="w-10 h-10 dark:bg-gray-700 dark:text-gray-300">
                                 <AvatarImage
                                   src={
@@ -746,13 +747,13 @@ export function PersonPage({ personId, selfProfile }: PersonPageProps) {
                             </Link>
                             <div>
                               <div className="flex items-center gap-2">
-                                <Link href={`/person/${following._id}`}>
+                                <Link href={`/person/${following.id}`}>
                                   <span className="font-semibold text-gray-900 dark:text-gray-100">
                                     {following.fullName}
                                   </span>
                                 </Link>
                               </div>
-                              <Link href={`/person/${following._id}`}>
+                              <Link href={`/person/${following.id}`}>
                                 <span className="text-sm text-gray-600 dark:text-gray-300">
                                   @{following.username}
                                 </span>

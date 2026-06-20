@@ -17,10 +17,9 @@ import {
 } from "@/components/ui/form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Eye, EyeOff, User, Mail, Lock, Camera, Check, X } from "lucide-react";
-import { useAuthApi } from "@/lib/requests";
 import { toast } from "sonner";
 import { signupSchema } from "@/utils/models/signup.model";
-import { signIn } from "next-auth/react";
+import { signIn, signUp } from "@/lib/auth/session";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { GoogleIcon } from "./ui/icons/google";
@@ -72,20 +71,24 @@ export function SignupPage() {
     setIsLoading(true);
 
     try {
-      const response = await useAuthApi.signUp(data);
+      const { ok, error, needsConfirmation } = await signUp({
+        fullName: data.fullName,
+        username: data.username,
+        email: data.email,
+        password: data.password,
+        agreeToTerms: data.agreeToTerms,
+      });
 
-      if (response.status === 200) {
-        toast.success("Account created successfully!");
-        await signIn("credentials", {
-          email: data.email,
-          password: data.password,
-          redirect: true,
-          callbackUrl: "/",
-        });
+      if (ok) {
+        if (needsConfirmation) {
+          toast.success("Account created! Check your email to confirm, then sign in.");
+          router.push("/login");
+        } else {
+          toast.success("Account created successfully!");
+          router.push("/feed");
+        }
       } else {
-        toast.info(
-          "Error creating account: " + (response.message || "Unknown error")
-        );
+        toast.info("Error creating account: " + (error || "Unknown error"));
       }
     } catch (error) {
       toast.error("Error creating account");
