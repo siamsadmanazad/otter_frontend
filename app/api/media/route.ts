@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { isAllowed, limitKey } from "@/lib/ratelimit";
 import { moderateImage } from "@/lib/moderation";
+import { captureRouteError } from "@/lib/observability";
 
 const BUCKET = "posts";
 const MAX_IMAGE_MB = 10;
@@ -120,6 +121,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Error processing file upload:", error);
+    captureRouteError("media upload failed", { error: String(error) });
     return NextResponse.json({ error: "Failed to process file" }, { status: 500 });
   }
 }
