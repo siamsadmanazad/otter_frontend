@@ -3,6 +3,7 @@ import { Buffer } from "buffer";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
+import { isAllowed, limitKey } from "@/lib/ratelimit";
 
 const BUCKET = "posts";
 const MAX_IMAGE_MB = 10;
@@ -33,6 +34,15 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const user = await getServerUser(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Upload cap: 30 / 5 min per user (anti-abuse on storage).
+  const allowed = await isAllowed(limitKey("media", user.id, request), 30, 300);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many uploads. Please wait a moment and try again." },
+      { status: 429 }
+    );
+  }
 
   try {
     const formData = await request.formData();
