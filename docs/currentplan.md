@@ -231,6 +231,11 @@ Web steps W1→W9 are sequential; Flutter F0→F6 can begin once W1 confirms the
 - **W6b Chat UI rewire = the next big piece** (and best done against a live browser): rewire `useChatLogic`/`chat-page`/`chat-area`/
   `chat-list` from the dead socket model to `useChatApi` + a per-conversation Supabase Realtime channel; scope to DIRECT DMs
   (schema has no presence/global-chat); add read receipts + unread. ~1.6k lines touched — verify in a running app.
-- **STRONGLY RECOMMENDED NOW: start the dev server** (`! pnpm dev` against hosted) so the accumulated W3 (journals) + W4
-  (notifications) + W6 (chat) all get browser-verified together (W1), instead of stacking more unverified UI. I can drive fixes
-  from whatever the run surfaces.
+- 2026-06-20 — **Dev server up against hosted** (health = DB hit; chat/notif routes alive). **W6b Chat UI DONE.** Rewired
+  `useChatLogic` + shell off the dead socket model to REST + one RLS-scoped Realtime channel (direct DMs, new-chat picker,
+  unread dot, load-older, mobile back). Retired group-dialog/multiselect (out of DM scope). `/chat` compiles + serves 200.
+  tsc 102 → 89. Commit `30d77ea`. Per-message "seen" + groups = fast-follow.
+- **NEEDS BROWSER VERIFY (2 users):** journals publish (W3), notification center + live push (W4), and the **chat two-user
+  realtime exchange** (W6). Server is running at http://localhost:3000 — walk the flows and report; I'll fix what surfaces.
+- **Remaining after verify:** W5 Settings (needs the approved `preferences` migration), W7 seed+shop-hide, W8 deploy, W9 polish;
+  Flutter F0–F6; and W0 tail (89 → 0 tsc + drop ignore flags).
