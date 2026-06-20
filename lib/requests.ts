@@ -685,6 +685,89 @@ class NotificationAPI extends BaseAPI {
   };
 }
 
+class ChatAPI extends BaseAPI {
+  public getConversations = async (): Promise<AxiosResponse> => {
+    try {
+      const response = await this.apiClient.get(`/api/chat/conversations`);
+      return response.data;
+    } catch (error) {
+      const axiosError = error as any;
+      throw axiosError.response?.data || axiosError.message;
+    }
+  };
+  public createDirectConversation = async (
+    userId: string
+  ): Promise<AxiosResponse> => {
+    try {
+      const response = await this.apiClient.post(`/api/chat/conversations`, {
+        userId,
+      });
+      return response.data;
+    } catch (error) {
+      const axiosError = error as any;
+      throw axiosError.response?.data || axiosError.message;
+    }
+  };
+  public getMessages = async (
+    conversationId: string,
+    before?: string,
+    limit = 30
+  ): Promise<AxiosResponse> => {
+    try {
+      const q = new URLSearchParams({ limit: String(limit) });
+      if (before) q.set("before", before);
+      const response = await this.apiClient.get(
+        `/api/chat/conversations/${conversationId}/messages?${q.toString()}`
+      );
+      return response.data;
+    } catch (error) {
+      const axiosError = error as any;
+      throw axiosError.response?.data || axiosError.message;
+    }
+  };
+  public sendMessage = async (
+    conversationId: string,
+    content: string,
+    attachments: any[] = []
+  ): Promise<AxiosResponse> => {
+    try {
+      const response = await this.apiClient.post(
+        `/api/chat/conversations/${conversationId}/messages`,
+        { content, attachments }
+      );
+      return response.data;
+    } catch (error) {
+      const axiosError = error as any;
+      throw axiosError.response?.data || axiosError.message;
+    }
+  };
+  public markConversationRead = async (
+    conversationId: string
+  ): Promise<AxiosResponse> => {
+    try {
+      const response = await this.apiClient.post(
+        `/api/chat/conversations/${conversationId}/read`
+      );
+      return response.data;
+    } catch (error) {
+      const axiosError = error as any;
+      throw axiosError.response?.data || axiosError.message;
+    }
+  };
+  public deleteMessage = async (messageId: string): Promise<AxiosResponse> => {
+    try {
+      const response = await this.apiClient.delete(
+        `/api/chat/messages/${messageId}`
+      );
+      return response.data;
+    } catch (error) {
+      const axiosError = error as any;
+      throw axiosError.response?.data || axiosError.message;
+    }
+  };
+}
+
+export const useChatApi = new ChatAPI();
 export const useNotificationApi = new NotificationAPI();
 export const useAuthApi = new AuthAPI();
 export const usePostApi = new PostAPI();
