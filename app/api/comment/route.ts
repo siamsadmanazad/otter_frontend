@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
+import { enforceRateLimit } from "@/lib/ratelimit";
 
 function mapComment(c: Record<string, any> | null) {
   if (!c) return null;
@@ -35,6 +36,10 @@ export async function POST(request: NextRequest): Promise<Response> {
   try {
     const user = await getServerUser(request);
     if (!user) return fail("Unauthorized", 401);
+
+    // Anti-spam: max 10 comments / 60s per user.
+    const limited = await enforceRateLimit("comment", user.id, request, 10, 60);
+    if (limited) return limited;
 
     const body = await request.json();
     const content: string = body.content;
