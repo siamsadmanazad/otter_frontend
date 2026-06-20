@@ -104,12 +104,16 @@ Sequence: **A → B → C → D → E**; F anytime (user-gated). A+B = highest-i
 
 | Phase | Steps | Status |
 |---|---|---|
-| A — rate-limiting | A1–A7 | ⬜ not started |
-| B — chat → RLS | B1–B4 | ⬜ not started |
-| C — content safety | C1–C2 | ⬜ not started |
-| D — spec + tests | D1–D3 | ⬜ not started |
-| E — observability | E1–E2 | ⬜ not started |
-| F — user-gated | F1–F3 | ⬜ awaiting user |
+| A — rate-limiting | A1–A7 | ✅ DONE 2026-06-20 (durable Postgres limiter wired into comment/reaction/companion/media/chat-send; fail-open). A1 migration needs `db reset` validation when Docker is up + hosted `db push`. |
+| B — chat → RLS | B1–B4 | ✅ DONE 2026-06-20 (messages/read/delete/list on actor client → RLS-enforced; create-direct documented admin exception; build green). **B4 two-user denial test deferred** to a reachable DB. |
+| C — content safety | C1–C2 | ✅ C1 DONE 2026-06-20 (env-gated server moderation hook on media upload). C2 (text→reports) optional/deferred. |
+| D — spec + tests | D1–D3 | ✅ DONE 2026-06-20. D1 openapi.yaml (3.1, 20 paths). D2 rls_tests.sql (6 isolation assertions, run vs local DB). D3 contract-test.mjs (envelope/id/irregular-body, run vs live server). D2/D3 are runnable-when-DB/server-up. |
+| E — observability | E1–E2 | ✅ DONE 2026-06-20 (Sentry hook on 5xx via fail() + media catch; no-op without SENTRY_DSN; build green). |
+| F — user-gated | F1–F3 | ⬜ awaiting user (DB password for hosted prefs migration; OAuth/Resend/rotate; Gemini later) |
+
+> **Backend hardening plan A–E COMPLETE (2026-06-20).** Remaining backend items are user-gated (F) or
+> runtime-verification of the test scripts (D2/D3 need a reachable DB/server; A1 migration needs `db reset` +
+> hosted `db push`). Build green, tsc 0.
 
 ---
 
