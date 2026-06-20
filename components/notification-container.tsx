@@ -1,7 +1,8 @@
 "use client";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect } from "react";
 import { useWebsocket } from "@/lib/useWebsocket";
-import { useSession } from "@/lib/auth/session";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNotificationApi } from "@/lib/requests";
 
 import {
   DropdownMenu,
@@ -23,33 +24,27 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-interface NotificationDocument {
-  id?: string;
-  serial: string;
-  createdBy: {
-    user: {
-      id: string;
-      fullName: string;
-      username: string;
-    };
-  };
-  receiver: string;
+interface NotificationItem {
+  id: string;
   type: "LIKE" | "COMMENT" | "FOLLOW" | "REPORT";
-  content: string;
-  postUrl?: string;
+  targetType?: string;
+  targetId?: string;
+  message: string;
+  read: boolean;
   createdAt: string;
-  isRead: boolean;
+  readAt?: string;
+  actor?: {
+    id: string;
+    username: string;
+    fullName: string;
+    profileImage?: string;
+  };
 }
 
+const NOTIF_KEY = ["notifications"];
+
 export const NotificationContainer = () => {
-  const [notifications, setNotifications] = useState<NotificationDocument[]>(
-    []
-  );
-  const [isConnected, setIsConnected] = useState(false);
-  const [isMarkingAllAsRead, setIsMarkingAllAsRead] = useState(false);
-  const { data: session } = useSession();
-  const userId = session?.user?.id;
-  const markAllTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const queryClient = useQueryClient();
   const router = useRouter();
   const socket = useWebsocket({
     path: "/notification",
@@ -57,198 +52,52 @@ export const NotificationContainer = () => {
     autoConnect: true,
   });
 
-  useEffect(() => {
-    if (socket) {
-      socket.on("connect", () => {
-        setIsConnected(true);
-      });
-      socket.on("disconnect", () => {
-        setIsConnected(false);
-      });
-
-      return () => {
-        socket.off("connect");
-        socket.off("disconnect");
-      };
-    }
-  }, [socket]);
-
-  useEffect(() => {
-    if (isConnected && socket && userId) {
-      socket.emit(
-        "findUserNotification",
-        userId,
-        (response: any[]) => {
-          if (response) {
-            setNotifications(response);
-          }
-        }
-      );
-
-      socket.on("newNotification", (newNotification: any) => {
-        if (newNotification.receiver === userId) {
-          setNotifications((prevNotifications) => [
-            newNotification,
-            ...prevNotifications,
-          ]);
-        }
-      });
-
-      socket.on(
-        "notificationUpdated",
-        (updatedNotification: any) => {
-          setNotifications((prevNotifications) =>
-            prevNotifications.map((notif) =>
-              notif.id === updatedNotification.id
-                ? updatedNotification
-                : notif
-            )
-          );
-        }
-      );
-
-      socket.on("notificationRemoved", (removedNotificationId: string) => {
-        setNotifications((prevNotifications) =>
-          prevNotifications.filter(
-            (notif) => notif.id !== removedNotificationId
-          )
-        );
-      });
-
-      return () => {
-        socket.off("newNotification");
-        socket.off("notificationUpdated");
-        socket.off("notificationRemoved");
-      };
-    }
-  }, [isConnected, socket, userId]);
-
-  const markAsRead = (id: string) => {
-    if (socket) {
-      const notificationToUpdate = notifications.find((n) => n.id === id);
-      if (notificationToUpdate && !notificationToUpdate.isRead) {
-        socket.emit(
-          "isNotificationRead",
-          id,
-          (response: any | null) => {
-            if (response) {
-              setNotifications((prev) =>
-                prev.map((notif) =>
-                  notif.id === response.id ? response : notif
-                )
-              );
-            } else {
-              setNotifications((prev) =>
-                prev.map((notif) =>
-                  notif.id === id ? { ...notif, isRead: true } : notif
-                )
-              );
-            }
-          }
-        );
+  const { data } = useQuery({
+    queryKey: NOTIF_KEY,
+    queryFn: async () => {
+      const response: any = await useNotificationApi.getNotifications(1, 50);
+      if (response.status !== 200) {
+        throw new Error(response.message || "Failed to load notifications.");
       }
-    }
-  };
+      return (response.data ?? []) as NotificationItem[];
+    },
+  });
 
-  const markAllAsReadDebounced = () => {
-    if (isMarkingAllAsRead) return;
+  const notifications = data ?? [];
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
-    if (markAllTimeoutRef.current) {
-      clearTimeout(markAllTimeoutRef.current);
-    }
-
-    markAllTimeoutRef.current = setTimeout(() => {
-      if (socket && !isMarkingAllAsRead) {
-        setIsMarkingAllAsRead(true);
-
-        const unreadNotifications = notifications.filter(
-          (notif) => !notif.isRead
-        );
-
-        if (unreadNotifications.length === 0) {
-          setIsMarkingAllAsRead(false);
-          return;
-        }
-
-        const batchSize = 5;
-        const batches = [];
-
-        for (let i = 0; i < unreadNotifications.length; i += batchSize) {
-          batches.push(unreadNotifications.slice(i, i + batchSize));
-        }
-
-        const processBatch = async (batchIndex: number) => {
-          if (batchIndex >= batches.length) {
-            setIsMarkingAllAsRead(false);
-            return;
-          }
-
-          const batch = batches[batchIndex];
-          const promises = batch.map((notif) => {
-            return new Promise<void>((resolve) => {
-              socket.emit(
-                "isNotificationRead",
-                notif.id!,
-                (response: any | null) => {
-                  if (!response) {
-                    setNotifications((prev) =>
-                      prev.map((n) =>
-                        n.id === notif.id ? { ...n, isRead: true } : n
-                      )
-                    );
-                  }
-                  resolve();
-                }
-              );
-            });
-          });
-
-          await Promise.all(promises);
-
-          setTimeout(() => processBatch(batchIndex + 1), 100);
-        };
-
-        processBatch(0);
-      }
-    }, 300);
-  };
-
-  const handleDeleteNotification = (id: string) => {
-    if (socket) {
-      socket.emit(
-        "removeNotification",
-        id,
-        (response: any | null) => {
-          if (response) {
-            setNotifications((prevNotifications) =>
-              prevNotifications.filter((notif) => notif.id !== response.id)
-            );
-          } else {
-            setNotifications((prevNotifications) =>
-              prevNotifications.filter((notif) => notif.id !== id)
-            );
-          }
-        }
-      );
-    }
-  };
-
+  // Live: a new notification INSERT for this user -> refetch (gets the enriched actor).
   useEffect(() => {
-    return () => {
-      if (markAllTimeoutRef.current) {
-        clearTimeout(markAllTimeoutRef.current);
-      }
-    };
-  }, []);
+    if (!socket) return;
+    const onNew = () => queryClient.invalidateQueries({ queryKey: NOTIF_KEY });
+    socket.on("newNotification", onNew);
+    return () => socket.off("newNotification", onNew);
+  }, [socket, queryClient]);
 
-  const unreadCount = notifications.filter((notif) => !notif.isRead).length;
+  const markRead = useMutation({
+    mutationFn: (id: string) => useNotificationApi.markAsRead(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: NOTIF_KEY }),
+  });
+  const markAll = useMutation({
+    mutationFn: () => useNotificationApi.markAllAsRead(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: NOTIF_KEY }),
+  });
+  const removeOne = useMutation({
+    mutationFn: (id: string) => useNotificationApi.deleteNotification(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: NOTIF_KEY }),
+  });
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleString();
+  const formatDate = (dateString: string) =>
+    new Date(dateString).toLocaleString();
+
+  const linkFor = (n: NotificationItem): string | null => {
+    if ((n.type === "LIKE" || n.type === "COMMENT") && n.targetId)
+      return `/post/${n.targetId}`;
+    if (n.type === "FOLLOW" && n.actor?.id) return `/person/${n.actor.id}`;
+    return null;
   };
 
-  const getNotificationIcon = (type: any) => {
+  const getNotificationIcon = (type: string) => {
     switch (type) {
       case "LIKE":
         return <Heart className="h-5 w-5" />;
@@ -263,14 +112,14 @@ export const NotificationContainer = () => {
     }
   };
 
+  const handleOpen = (n: NotificationItem) => {
+    if (!n.read) markRead.mutate(n.id);
+    const href = linkFor(n);
+    if (href) router.push(href);
+  };
+
   return (
-    <DropdownMenu
-      onOpenChange={(open) => {
-        if (open && unreadCount > 0) {
-          markAllAsReadDebounced();
-        }
-      }}
-    >
+    <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           className="relative p-2 text-white rounded-full border-2 border-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:hover:bg-gray-600 dark:focus:ring-blue-400 hover:bg-white hover:text-black duration-300"
@@ -291,15 +140,15 @@ export const NotificationContainer = () => {
           </h3>
           {unreadCount > 0 && (
             <button
-              onClick={markAllAsReadDebounced}
-              disabled={isMarkingAllAsRead}
+              onClick={() => markAll.mutate()}
+              disabled={markAll.isPending}
               className={`text-sm ${
-                isMarkingAllAsRead
+                markAll.isPending
                   ? "text-gray-400 cursor-not-allowed dark:text-gray-500"
                   : "text-blue-600 hover:underline dark:text-blue-400 dark:hover:underline"
               }`}
             >
-              {isMarkingAllAsRead ? "Marking..." : "Mark all as read"}
+              {markAll.isPending ? "Marking..." : "Mark all as read"}
             </button>
           )}
         </DropdownMenuLabel>
@@ -317,7 +166,7 @@ export const NotificationContainer = () => {
               <DropdownMenuItem
                 key={notification.id}
                 className={`p-4 border-b border-gray-100 dark:border-gray-700 ${
-                  !notification.isRead
+                  !notification.read
                     ? "bg-blue-50 hover:bg-blue-100 dark:bg-gray-700 dark:hover:bg-gray-600"
                     : "bg-white hover:bg-gray-50 dark:bg-gray-800 dark:hover:bg-gray-700"
                 } flex justify-between items-start`}
@@ -325,7 +174,7 @@ export const NotificationContainer = () => {
               >
                 <div
                   className="flex items-start flex-1 cursor-pointer"
-                  onClick={() => markAsRead(notification.id!)}
+                  onClick={() => handleOpen(notification)}
                 >
                   <span className="mr-3 dark:text-gray-200">
                     {getNotificationIcon(notification.type)}
@@ -333,21 +182,10 @@ export const NotificationContainer = () => {
                   <div className="flex-1">
                     <p className="text-sm text-gray-800 dark:text-gray-100">
                       <span className="font-medium">
-                        {notification?.createdBy?.user?.fullName ?? " "}
+                        {notification.actor?.fullName ?? "Someone"}
                       </span>{" "}
-                      {notification.content}
+                      {notification.message}
                     </p>
-                    {notification.postUrl && (
-                      <a
-                        href={notification.postUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-500 hover:underline text-xs mt-1 block dark:text-blue-400 dark:hover:underline"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        View Post
-                      </a>
-                    )}
                     <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                       {formatDate(notification.createdAt)}
                     </p>
@@ -356,7 +194,7 @@ export const NotificationContainer = () => {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleDeleteNotification(notification.id!);
+                    removeOne.mutate(notification.id);
                   }}
                   className="ml-2 p-1 rounded-full hover:bg-gray-200 text-gray-500 hover:text-red-500 transition-colors duration-200 dark:hover:bg-gray-700 dark:text-gray-400 dark:hover:text-red-400"
                   aria-label="Delete notification"
@@ -370,9 +208,7 @@ export const NotificationContainer = () => {
         <DropdownMenuSeparator className="dark:bg-gray-700" />
         <DropdownMenuItem className="p-2 text-center justify-center">
           <button
-            onClick={() => {
-              router.push("/notifications")
-            }}
+            onClick={() => router.push("/notifications")}
             className="text-blue-600 hover:underline text-sm dark:text-blue-400 dark:hover:underline"
           >
             See All

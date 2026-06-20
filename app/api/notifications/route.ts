@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
 
-export function mapNotification(n: Record<string, any> | null) {
+function mapNotification(n: Record<string, any> | null) {
   if (!n) return null;
   return {
     id: n.id,
@@ -27,19 +27,40 @@ export function mapNotification(n: Record<string, any> | null) {
 
 const ACTOR = "actor:profiles!notifications_actor_id_fkey(id, username, full_name, profile_image)";
 
-// GET /api/notifications -> current user's notifications (newest first)
+// GET /api/notifications?page=&limit= -> current user's notifications (newest first, paginated)
 export async function GET(request: NextRequest): Promise<Response> {
   const user = await getServerUser(request);
   if (!user) return fail("Unauthorized", 401);
+  const sp = request.nextUrl.searchParams;
+  const page = Math.max(1, parseInt(sp.get("page") || "1", 10));
+  const limit = Math.min(100, Math.max(1, parseInt(sp.get("limit") || "30", 10)));
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
   const db = createAdminClient();
   const { data, error } = await db
     .from("notifications")
     .select(`id, type, target_type, target_id, message, read, created_at, read_at, ${ACTOR}`)
     .eq("recipient_id", user.id)
     .order("created_at", { ascending: false })
-    .limit(100);
+    .range(from, to);
   if (error) return fail(error.message, 500);
   return ok((data ?? []).map(mapNotification), "Notifications fetched");
+}
+
+// DELETE /api/notifications?id= -> remove one of the caller's own notifications
+export async function DELETE(request: NextRequest): Promise<Response> {
+  const user = await getServerUser(request);
+  if (!user) return fail("Unauthorized", 401);
+  const id = request.nextUrl.searchParams.get("id");
+  if (!id) return fail("Notification id is required", 400);
+  const db = createAdminClient();
+  const { error } = await db
+    .from("notifications")
+    .delete()
+    .eq("id", id)
+    .eq("recipient_id", user.id);
+  if (error) return fail(error.message, 500);
+  return ok({ id }, "Notification deleted");
 }
 
 // PATCH /api/notifications  body { id }  -> mark one read;  body { all: true } -> mark all read

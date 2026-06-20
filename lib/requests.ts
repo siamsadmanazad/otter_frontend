@@ -637,6 +637,55 @@ class TribeAPI extends BaseAPI {
   }
 }
 
+class NotificationAPI extends BaseAPI {
+  public getNotifications = async (
+    page = 1,
+    limit = 30
+  ): Promise<AxiosResponse> => {
+    try {
+      const response = await this.apiClient.get(
+        `/api/notifications?page=${page}&limit=${limit}`
+      );
+      return response.data;
+    } catch (error) {
+      const axiosError = error as any;
+      throw axiosError.response?.data || axiosError.message;
+    }
+  };
+  public markAsRead = async (id: string): Promise<AxiosResponse> => {
+    try {
+      const response = await this.apiClient.patch(`/api/notifications`, { id });
+      return response.data;
+    } catch (error) {
+      const axiosError = error as any;
+      throw axiosError.response?.data || axiosError.message;
+    }
+  };
+  public markAllAsRead = async (): Promise<AxiosResponse> => {
+    try {
+      const response = await this.apiClient.patch(`/api/notifications`, {
+        all: true,
+      });
+      return response.data;
+    } catch (error) {
+      const axiosError = error as any;
+      throw axiosError.response?.data || axiosError.message;
+    }
+  };
+  public deleteNotification = async (id: string): Promise<AxiosResponse> => {
+    try {
+      const response = await this.apiClient.delete(
+        `/api/notifications?id=${id}`
+      );
+      return response.data;
+    } catch (error) {
+      const axiosError = error as any;
+      throw axiosError.response?.data || axiosError.message;
+    }
+  };
+}
+
+export const useNotificationApi = new NotificationAPI();
 export const useAuthApi = new AuthAPI();
 export const usePostApi = new PostAPI();
 export const useMediaApi = new MediaAPI();
