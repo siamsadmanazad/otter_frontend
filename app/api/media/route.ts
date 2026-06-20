@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { isAllowed, limitKey } from "@/lib/ratelimit";
+import { moderateImage } from "@/lib/moderation";
 
 const BUCKET = "posts";
 const MAX_IMAGE_MB = 10;
@@ -75,6 +76,18 @@ export async function POST(request: NextRequest) {
         ext = "webp";
       } catch (e) {
         console.warn("sharp optimize failed; uploading original", e);
+      }
+    }
+
+    // Server-side content moderation (final say over the client nsfwjs fast-fail).
+    // No-op pass unless MODERATION_API_URL is configured; fail-open on errors.
+    if (isImage) {
+      const verdict = await moderateImage(buffer, contentType);
+      if (!verdict.allowed) {
+        return NextResponse.json(
+          { error: verdict.reason || "Image rejected by content moderation." },
+          { status: 422 }
+        );
       }
     }
 
