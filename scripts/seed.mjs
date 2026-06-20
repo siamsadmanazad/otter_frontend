@@ -22,8 +22,8 @@ function loadEnvLocal() {
     const txt = readFileSync(join(__dirname, "..", ".env.local"), "utf8");
     const out = {};
     for (const line of txt.split("\n")) {
-      const m = line.match(/^([A-Z_]+)=(.*)$/);
-      if (m) out[m[1]] = m[2].trim();
+      const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
+      if (m) out[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
     }
     return out;
   } catch {
