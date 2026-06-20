@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
+import { enforceRateLimit } from "@/lib/ratelimit";
 
 const intakeSchema = z.object({
   destination: z.string().trim().max(120).optional(),
@@ -69,6 +70,11 @@ export async function GET(request: NextRequest): Promise<Response> {
 export async function POST(request: NextRequest): Promise<Response> {
   const user = await getServerUser(request);
   if (!user) return fail("Unauthorized", 401);
+
+  // Matching is relatively expensive — cap at 20 requests / day per user.
+  const limited = await enforceRateLimit("companion", user.id, request, 20, 86400);
+  if (limited) return limited;
+
   const parsed = intakeSchema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success)
     return fail(parsed.error.issues[0]?.message || "Invalid request", 400);
