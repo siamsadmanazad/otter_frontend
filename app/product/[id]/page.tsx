@@ -4,12 +4,12 @@ import { redirect } from "next/navigation"
 import { SHOP_ENABLED } from "@/lib/flags"
 
 interface ProductPageProps {
-  params: {
+  params: Promise<{
     id: string
-  }
-  searchParams: {
+  }>
+  searchParams: Promise<{
     shopId?: string
-  }
+  }>
 }
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -21,11 +21,13 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function Product({ params, searchParams }: ProductPageProps) {
+export default async function Product({ params, searchParams }: ProductPageProps) {
   if (!SHOP_ENABLED) redirect("/")
   // Product/shop ids are still integer-based mock data; kept behind the flag (fast-follow to uuid).
-  const productId = Number.parseInt(params.id)
-  const shopId = searchParams.shopId ? Number.parseInt(searchParams.shopId) : undefined
+  const { id } = await params
+  const { shopId: shopIdParam } = await searchParams
+  const productId = Number.parseInt(id)
+  const shopId = shopIdParam ? Number.parseInt(shopIdParam) : undefined
 
   return <ProductPage productId={productId} shopId={shopId} onBack={() => {}} />
 }

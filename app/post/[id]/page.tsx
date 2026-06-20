@@ -6,7 +6,7 @@ import PostPage from "./_component";
 export async function generateMetadata({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
   let title = "Photo";
@@ -28,7 +28,7 @@ export async function generateMetadata({
 export default async function Page({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
   try {

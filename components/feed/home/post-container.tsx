@@ -146,7 +146,7 @@ export function PostContainer() {
             <PostCardV2
               key={postItem.id}
               post={postItem}
-              session={session}
+              session={session as any}
               currentUserProfile={currentUserProfile}
               userImage={userImage}
               socket={socket}
