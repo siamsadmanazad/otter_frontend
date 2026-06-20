@@ -1,3 +1,5 @@
+import { NextResponse } from "next/server";
+
 const RATE_LIMIT = 2; // Max requests allowed
 const TIME_WINDOW = 20 * 1000; // Time window in milliseconds (1 minute)
 
@@ -39,7 +41,7 @@ export default async function RateLimiter_Middleware(request: Request) {
     const { allowed, resetTime } = rateLimiter(ip);
 
     if (!allowed) {
-      return Response.json(
+      return NextResponse.json(
         { error: "Too many requests. Please try again later." },
         {
           status: 429,

@@ -113,11 +113,11 @@ export function ImageDropzone({ onFileSelected, label, value }: ImageDropzonePro
             onFileSelected(processedFile);
             resolve();
           }
-          URL.revokeObjectURL(fileSrc);
+          if (fileSrc) URL.revokeObjectURL(fileSrc);
         };
         img.onerror = () => {
           toast.error(`Failed to load image: ${file.name}`);
-          URL.revokeObjectURL(fileSrc);
+          if (fileSrc) URL.revokeObjectURL(fileSrc);
           reject(new Error("Failed to load image."));
         };
       });
