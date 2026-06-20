@@ -7,6 +7,55 @@
 
 ---
 
+## ⭐ SESSION HANDOFF — resume here (updated 2026-06-20, end of session 2)
+
+> Read this block first on resume. Everything below it is the longer-form plan.
+
+### Where we are (web is feature-complete in code + builds green)
+- **All web work is on `main`** now (we merged the `rework/supabase-rewire` branch → PR #1 → main) so GitHub
+  contributions show green. **Keep committing directly to `main` in all three repos** (frontend/backend/flutter)
+  — every push is green. **Commit + push after each step.**
+- **Web status:** Phase 1 re-wire done; **W0 tsc-clean COMPLETE (0 errors, `ignoreBuildErrors` removed, `pnpm build`
+  passes)**; W3 Journals, W4 Notifications, W5 Settings, W6 Chat, W7 Seed + Shop-hidden — **all done in code**.
+- **Hosted Supabase** has the seed live (8 demo users; **login pw `OtterDemo!2026`**, emails
+  `otter.demo+{alice,ben,…}@tripotter.app`).
+- **Flutter:** foundation + **complete data layer done** (this session): `core/` (env, supabase, dio+Bearer
+  client, theme, providers) + `models/` + **7 repositories** (auth, feed, tribe, notification, chat, social,
+  settings) all `flutter analyze`-clean. **UI screens NOT built yet** (deferred — see next).
+
+### What we were doing when we broke (cross-repo backend-structure pass)
+- Reviewed `otter_backend` → backend is structurally complete for built features. Built the **Flutter data layer**
+  mirroring the full REST contract, committing each repo after each step.
+- **Just finished:** **companion intake** across 3 repos — `POST /api/companion` (persist `companion_requests` +
+  heuristic-ranked matches) + Flutter `submitCompanionRequest`. Committed (frontend `108d9cf`, flutter `ff20485`).
+
+### NEXT STEPS (in order) when we resume
+1. **Flutter UI/UX + accessibility design pass, then build screens** (the user's stated next focus): auth → shell
+   (bottom nav) → intuitive feed → create post/journal → **Reddit-style tribes** → notifications → chat →
+   profile/settings. Data layer already exists; wire screens to the repositories. Verify with `flutter analyze` +
+   run against hosted via `--dart-define` (seeded account).
+2. **Web mobile-view optimization** (was mid-audit): the **bottom nav (`components/mobile/mobile-navigation.tsx`)
+   links to DEAD routes** (`/tripeasy`, `/shops`, `/groups`, `/person/me`, `/person/likes`) and **omits
+   Tribes/Chat/Notifications**; no safe-area padding; Profile ignores the real `profileId`. Rebuild it (real routes
+   + active states + `env(safe-area-inset-bottom)` + real profile id) and add bottom padding so content clears the
+   fixed nav. Header (`mobile-header.tsx`) already exposes chat + notifications + hamburger.
+3. **OpenAPI 3.1 spec** in `otter_backend` (Phase 9.4) — documents the contract for Flutter; not yet written.
+4. **Hardening** (§16): wire `lib/rate-limiter` into comment/reaction/companion routes; Sentry scaffold (env DSN).
+
+### BLOCKED ON USER (manual — you'll do these)
+- **G5 hosted migration:** `profiles.preferences` migration is written + validated locally + committed to
+  `otter_backend`, but **needs `supabase db push` to hosted → requires the DB password** (old token revoked → 403).
+  Until applied, Settings forms read defaults but can't SAVE against hosted (chat/web otherwise fine — it degrades
+  gracefully). Run `! supabase db push` from `otter_backend` (it'll prompt) OR `export SUPABASE_DB_PASSWORD=…`.
+- **Vercel deploy (G10): deliberately deferred** (free tier). Deploy config still to be written as prep.
+- Other G15: configure Google OAuth in Supabase; add `RESEND_API_KEY`; rotate DB password.
+
+### Verification still owed (needs a running browser/dev server)
+- Browser smoke of the core loop (G1), realtime live-push (G2), 2-user chat (G6) — never run in a real browser;
+  only API/Bearer-proven. Playwright browser binary is **not installed** (`npx playwright install` to enable visuals).
+
+---
+
 ## 0. Index
 - [1. Working agreements](#1-working-agreements)
 - [2. Execution order (efficiency-sorted)](#2-execution-order--efficiency-sorted)

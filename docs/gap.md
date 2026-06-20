@@ -69,7 +69,7 @@
 | **G13** | **Observability** (Sentry), load test, search ranking | None | P2 | M | FE+BE | Post-launch. |
 | **G14** | **AI Companions (Gemini)** + server NSFW moderation | Not built | P2 | L | FE+BE | Deferred (user chose heuristic). Drop-in later. |
 | **G15** | **Manual/security** items | Pending | P0 | S | — | Rotate DB password; confirm Google OAuth configured; provide RESEND_API_KEY for email; `.env.local` keys present. |
-| **G16** | **Finish tsc-clean + drop `ignoreBuildErrors`** | In progress: ~300 hidden errors → **109** (2026-06-20) | P1 | M | FE | Phase 1 was **never** typecheck-clean — `ignoreBuildErrors` masked it; docs over-claimed "build green". Type-decl `_id→id` + de-mongoose done. Residual 109 are per-feature; clear them inside W4/W5/W6 + a final sweep, then remove the ignore flags. |
+| **G16** | **Finish tsc-clean + drop `ignoreBuildErrors`** | **DONE 2026-06-20** — 0 tsc errors, build green | P1 | M | FE | Cleared all ~300 masked errors; `typescript.ignoreBuildErrors` removed → TS now BLOCKS the build, and `pnpm build` SUCCEEDS. (ESLint enforcement still deferred — separate style debt.) |
 
 ### Corrections to prior docs (verified 2026-06-20)
 - **Phase 1 not actually green:** `pnpm build` only passed because `next.config` still sets `ignoreBuildErrors`/`ignoreDuringBuilds`. `tsc --noEmit` showed ~300 errors. Now 109 after type-decl fixes. See G16.
