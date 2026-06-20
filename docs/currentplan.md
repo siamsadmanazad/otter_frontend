@@ -219,6 +219,11 @@ Web steps W1→W9 are sequential; Flutter F0→F6 can begin once W1 confirms the
   mutation like CreatePost; feed invalidation; Save Draft → localStorage). Re-exposed the "Create Journey" tile in the composer
   (it was commented out with a broken import → journals were unreachable). Typecheck-clean, 0 new errors. Commit `3aebd31`.
   Fast-follow noted: rich-HTML fidelity needs a `content` column + sanitized renderer (today body is flattened to plain text).
-- **Next:** W4 (notification center persistence) — also clears the remaining notification-container type errors. Then W5/W6.
-  **W1 (browser smoke) still needs the dev server running** — user starts `! pnpm dev` against hosted (or grant a browser tool);
-  it will verify W3 journals + the core loop in a real browser.
+- 2026-06-20 — **W4 Notification center DONE (code).** Route: pagination + DELETE. New `NotificationAPI`. Both UIs (bell +
+  page) rewired from the dead socket/old-shape to TanStack Query on the API with the NEW shape — fixes the always-wrong unread
+  badge and the live guard that silently dropped every realtime item. Added page pagination + states. tsc 109 → 102. Commit `2f8f819`.
+- **DECISION POINT — W5 needs a hosted DB migration.** `profiles` has no preferences column; Settings tabs need
+  `preferences jsonb`. Per project rule, applying to the hosted Supabase needs user approval. Options: (a) add migration +
+  push to hosted now, (b) build migration local-only + defer hosted apply, (c) skip W5, do **W6 chat** next (chat tables already
+  exist → no new DB). Awaiting user.
+- **W1 (browser smoke) still pending** — needs the dev server (`! pnpm dev` against hosted); will verify W3 + W4 + the core loop.
