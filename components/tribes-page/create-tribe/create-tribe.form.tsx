@@ -145,11 +145,11 @@ function ImageDropzone({ onFileSelected, label, value }: ImageDropzoneProps) {
             onFileSelected(processedFile);
             resolve();
           }
-          URL.revokeObjectURL(fileSrc);
+          if (fileSrc) URL.revokeObjectURL(fileSrc);
         };
         img.onerror = () => {
           toast.error(`Failed to load image: ${file.name}`);
-          URL.revokeObjectURL(fileSrc);
+          if (fileSrc) URL.revokeObjectURL(fileSrc);
           reject(new Error("Failed to load image."));
         };
       });
@@ -242,7 +242,7 @@ export function CreateTribeForm({
 
   const queryClient = useQueryClient();
 
-  const { mutateAsync: createTribe, isLoading } = useMutation({
+  const { mutateAsync: createTribe, isPending: isLoading } = useMutation({
     mutationFn: (data: any) => useTribeAPI.createTribe(data),
     onSuccess: () => {
       toast.success("Tribe created!");

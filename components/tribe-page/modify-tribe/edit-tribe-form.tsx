@@ -98,7 +98,7 @@ export function EditTribeForm({
     }
   }, [tribe, isLoadingTribe]);
 
-  const { mutateAsync: updateTribe, isLoading } = useMutation({
+  const { mutateAsync: updateTribe, isPending: isLoading } = useMutation({
     mutationFn: (data: any) => useTribeAPI.updateTribe(tribeSerial, data),
     onSuccess: () => {
       toast.success("Tribe updated!");
