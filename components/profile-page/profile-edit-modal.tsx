@@ -139,7 +139,7 @@ export function ProfileEditForm({ type, defaultData, onClose }: ProfileEditFormP
     }
 
     // Only search if location input is not empty
-    if (locationData?.location.trim() !== "") {
+    if (locationData?.location?.trim() !== "") {
       setIsSearchingLocations(true);
       debounceTimeoutRef.current = setTimeout(async () => {
         try {
@@ -214,7 +214,7 @@ export function ProfileEditForm({ type, defaultData, onClose }: ProfileEditFormP
       toast.success("Profile updated successfully!");
       // Invalidate the 'user' query for the specific user ID to refetch latest data
       queryClient.invalidateQueries({ queryKey: ["user", defaultData?.id] });
-      onClose(); // Close the modal on successful submission
+      onClose?.(); // Close the modal on successful submission
     },
     onError: (error) => {
       console.error("Error updating profile:", error);
@@ -347,7 +347,7 @@ export function ProfileEditForm({ type, defaultData, onClose }: ProfileEditFormP
               }}
             />
             <CommandList>
-              {isSearchingLocations && locationData.location.trim() !== "" ? (
+              {isSearchingLocations && locationData.location?.trim() !== "" ? (
                 <CommandEmpty className="flex items-center justify-center p-4">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Searching...
                 </CommandEmpty>
@@ -646,7 +646,7 @@ export function ProfileEditFormNoModal() {
       clearTimeout(debounceTimeoutRef.current);
     }
 
-    if (locationData?.location.trim() !== "") {
+    if (locationData?.location?.trim() !== "") {
       setIsSearchingLocations(true);
       debounceTimeoutRef.current = setTimeout(async () => {
         try {
@@ -832,7 +832,7 @@ export function ProfileEditFormNoModal() {
               className="dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:placeholder-gray-400"
             />
             <CommandList className="dark:bg-gray-800">
-              {isSearchingLocations && locationData.location.trim() !== "" ? (
+              {isSearchingLocations && locationData.location?.trim() !== "" ? (
                 <CommandEmpty className="flex items-center justify-center p-4 dark:text-gray-300">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Searching...
                 </CommandEmpty>

@@ -15,7 +15,7 @@ import axios from "axios"
 import { useEffect, useState } from "react"
 
 interface IResponseUser {
-  _id: string
+  id: string
   fullName: string
   username: string
   profileImage?: string
