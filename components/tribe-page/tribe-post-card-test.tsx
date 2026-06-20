@@ -39,7 +39,7 @@ export function TribePostCard({
     currentUserProfile: any;
     session: any | null;
     userImage: any;
-    socket: Socket<any, any>;
+    socket: Socket;
     isSocketConnected: boolean;
 }) {
     const currentLoggedInUser = session?.user;

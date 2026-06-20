@@ -46,7 +46,7 @@ export function PostCard({
 }: {
   post: IPostProps;
   session: any;
-  socket: Socket<any, any>;
+  socket: Socket;
   isSocketConnected: boolean;
 }) {
   const currentLoggedInUser = session?.user;

@@ -57,7 +57,7 @@ export function PostCardV2({
       username: string;
     };
   } | null;
-  socket: Socket<any, any>;
+  socket: Socket;
   isSocketConnected: boolean;
 }) {
   const currentLoggedInUser = session?.user;
