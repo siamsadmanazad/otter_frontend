@@ -453,9 +453,9 @@ export function PostCardV2({
             </DropdownMenuItem>
             {isValidId(session?.user?.id) && isValidId(post.owner?.id) && (
               <ReportModal
-                reportedBy={session?.user.id}
+                reportedBy={session?.user?.id ?? ""}
                 relatedPostId={post.id}
-                reportedUser={post?.owner.id}
+                reportedUser={post?.owner?.id ?? ""}
               >
                 <DropdownMenuItem
                   onSelect={(e) => e.preventDefault()}
@@ -647,7 +647,7 @@ export function PostCardV2({
                           className="dark:bg-gray-700 dark:border-gray-600"
                         >
                           <ReportModal
-                            reportedBy={session.user.id}
+                            reportedBy={session?.user?.id ?? ""}
                             reportedUser={comment.owner.id}
                             relatedPostId={post.id}
                             relatedCommentId={comment.id}

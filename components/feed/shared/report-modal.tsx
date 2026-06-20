@@ -41,10 +41,7 @@ export const reportSchema = z.object({
   reasonDescription: z.string().trim().optional(),
   relatedComment: z.string().trim().optional(),
   relatedPost: z.string().trim().optional(),
-  status: z
-    .enum(["PENDING", "REVIEWED", "RESOLVED"])
-    .optional()
-    .default("PENDING"),
+  status: z.enum(["PENDING", "REVIEWED", "RESOLVED"]).optional(),
 });
 
 export type ReportInput = z.infer<typeof reportSchema>;

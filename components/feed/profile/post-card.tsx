@@ -116,7 +116,7 @@ export function PostCard({
   const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>(
     {}
   );
-  const [displayedComments, setDisplayedComments] = useState(post.comments);
+  const [displayedComments, setDisplayedComments] = useState<any[]>(post.comments);
   const [isLiked, setIsLiked] = useState(
     currentLoggedInUser
       ? post.likes.some(
@@ -165,10 +165,10 @@ export function PostCard({
       useCommentApi.createComment(post.id, newCommentText),
     onMutate: async (newCommentText) => {
       const newTempComment = {
-        _id: `temp-${Date.now()}`,
+        id: `temp-${Date.now()}`,
         content: newCommentText,
         owner: {
-          _id: currentLoggedInUser?.id || "",
+          id: currentLoggedInUser?.id || "",
           username: currentLoggedInUser?.username || "",
           profileImage: currentLoggedInUser?.image || "",
         },

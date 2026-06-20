@@ -115,7 +115,7 @@ export function CreatePost({
           <CreatePostForm
             onSubmit={createPostMutation.mutateAsync}
             owner={profileId}
-            isSubmitting={createPostMutation.isLoading}
+            isSubmitting={createPostMutation.isPending}
           />
         </DialogContent>
       </form>
@@ -133,7 +133,7 @@ export function CreatePostForm({
 }) {
   const [files, setFiles] = useState<File[]>([]);
   const { data: session } = useSession();
-  const [suggestions, setSuggestions] = useState([]);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
 
   useEffect(() => {
     loadNsfwModel();
@@ -255,7 +255,7 @@ export function CreatePostForm({
               // If NSFW model not loaded, still add the file
               filteredFiles.push(processedFile);
             }
-            URL.revokeObjectURL(fileSrc); // Clean up the object URL after use
+            if (fileSrc) URL.revokeObjectURL(fileSrc); // Clean up the object URL after use
             resolve();
           };
           img.onerror = () => {
@@ -263,7 +263,7 @@ export function CreatePostForm({
             toast.error(
               `Failed to load image for content check: ${file.name}.`
             );
-            URL.revokeObjectURL(fileSrc); // Clean up the object URL
+            if (fileSrc) URL.revokeObjectURL(fileSrc); // Clean up the object URL
             resolve(); // Resolve the promise to not block other files
           };
         });

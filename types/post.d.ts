@@ -26,9 +26,11 @@ export interface IPostProps {
   comments: Array<{
     id: string;
     content: string;
+    edited?: boolean;
     owner: {
       id: string;
       username: string;
+      profileImage?: string;
     };
     createdAt: string;
   }>;
