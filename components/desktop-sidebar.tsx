@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { SHOP_ENABLED } from "@/lib/flags";
 
 export function DesktopSidebar() {
   const pathname = usePathname();
@@ -76,20 +77,22 @@ export function DesktopSidebar() {
             </Button>
           </Link>
 
-          <Link href="/shop" passHref>
-            <Button
-              variant={pathname === "/shop" ? "default" : "ghost"}
-              className={cn(
-                "w-full justify-start gap-3 h-12 text-base",
-                pathname === "/shop"
-                  ? "dark:bg-blue-700 dark:text-white" // Active state dark mode
-                  : "dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-gray-100" // Inactive state dark mode
-              )}
-            >
-              <ShoppingBag className="w-5 h-5" />
-              Shops
-            </Button>
-          </Link>
+          {SHOP_ENABLED && (
+            <Link href="/shop" passHref>
+              <Button
+                variant={pathname === "/shop" ? "default" : "ghost"}
+                className={cn(
+                  "w-full justify-start gap-3 h-12 text-base",
+                  pathname === "/shop"
+                    ? "dark:bg-blue-700 dark:text-white" // Active state dark mode
+                    : "dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-gray-100" // Inactive state dark mode
+                )}
+              >
+                <ShoppingBag className="w-5 h-5" />
+                Shops
+              </Button>
+            </Link>
+          )}
 
           <Link href="/settings" passHref>
             <Button

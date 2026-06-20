@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { SHOP_ENABLED } from "@/lib/flags";
 import {
   Home,
   Users,
@@ -65,7 +66,9 @@ export function Sidebar() {
     { href: "/companions", icon: Users, label: "Companions" },
     { href: "/chat", icon: MessageCircle, label: "Chat" },
     { href: "/groups", icon: Boxes, label: "Groups" },
-    { href: "/shops", icon: MapPin, label: "Shops" },
+    ...(SHOP_ENABLED
+      ? [{ href: "/shops", icon: MapPin, label: "Shops" }]
+      : []),
     { href: "/settings", icon: Settings, label: "Settings" },
   ];
 
