@@ -42,12 +42,24 @@ export interface IUserProfile {
   coverImage: string;
   profileImage: string;
   role: "USER" | "BUSINESS";
+  verified?: boolean;
+  stats?: {
+    totalLikes?: number;
+    avgLikes?: number;
+    engagement?: number;
+  };
   profile: {
+    id?: string;
     postsCount: number;
     commentsCount: number;
     followersCount: number;
     followingCount: number;
     createdAt: Date;
     updatedAt: Date;
+    // Legacy populated arrays — the rebuilt API returns counts, not arrays, so
+    // these are optional and may be absent at runtime (reads guard accordingly).
+    posts?: any[];
+    followers?: any[];
+    following?: any[];
   };
 }

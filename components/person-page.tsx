@@ -85,9 +85,10 @@ export function PersonPage({ personId, selfProfile }: PersonPageProps) {
   const postsCount = _personData?.profile?.postsCount || 0;
 
   // Determine if the current user is following this profile
-  const isFollowingInitial =
+  const isFollowingInitial = !!(
     currentLoggedInUserId &&
-    _personData?.profile?.followers?.includes(currentLoggedInUserId);
+    _personData?.profile?.followers?.includes(currentLoggedInUserId)
+  );
   const [isFollowing, setIsFollowing] = useState(isFollowingInitial);
 
   // Update isFollowing state when personProfile changes
@@ -169,10 +170,10 @@ export function PersonPage({ personId, selfProfile }: PersonPageProps) {
         queryClient.setQueryData<IUserProfile>(["user", personId], (old) => {
           if (!old) return old;
           const newFollowers = isFollowing
-            ? old.profile.followers.filter(
+            ? (old.profile.followers ?? []).filter(
                 (f: any) => (f.id || f) !== currentLoggedInUserId
               )
-            : [...old.profile.followers, currentLoggedInUserId];
+            : [...(old.profile.followers ?? []), currentLoggedInUserId];
 
           return {
             ...old,
@@ -205,8 +206,8 @@ export function PersonPage({ personId, selfProfile }: PersonPageProps) {
         queryClient.setQueryData<IUserProfile>(["user", personId], (old) => {
           if (!old) return old;
           const revertedFollowers = context.previousIsFollowing
-            ? [...old.profile.followers, currentLoggedInUserId]
-            : old.profile.followers.filter(
+            ? [...(old.profile.followers ?? []), currentLoggedInUserId]
+            : (old.profile.followers ?? []).filter(
                 (f: any) => (f.id || f) !== currentLoggedInUserId
               );
 
