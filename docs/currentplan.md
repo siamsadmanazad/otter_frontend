@@ -239,3 +239,10 @@ Web steps W1→W9 are sequential; Flutter F0→F6 can begin once W1 confirms the
   realtime exchange** (W6). Server is running at http://localhost:3000 — walk the flows and report; I'll fix what surfaces.
 - **Remaining after verify:** W5 Settings (needs the approved `preferences` migration), W7 seed+shop-hide, W8 deploy, W9 polish;
   Flutter F0–F6; and W0 tail (89 → 0 tsc + drop ignore flags).
+- 2026-06-20 — **W5 Settings + W7 Seed/Shop DONE (per build_settings_seed.md).** A1 prefs migration validated locally + committed;
+  A2 settings API; A3 three working tabs; A4 whoCanMessage enforced (graceful pre-migration). B1 idempotent seed → **applied to
+  hosted** (8 users + content; demo pw `OtterDemo!2026`); B3 Shop hidden behind `SHOP_ENABLED` + route redirects. Commits
+  0909de2..e4bf7b5. tsc 102 → 89.
+- **ONE BLOCKER for W5 on hosted:** `supabase db push` needs the hosted **DB password** (old access token revoked → 403). Until
+  applied, the Settings forms read defaults but can't save against hosted (chat-create stays fine — it degrades gracefully).
+  Provide the DB password (set `SUPABASE_DB_PASSWORD`) or run `supabase db push` from otter_backend.
