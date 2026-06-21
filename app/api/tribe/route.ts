@@ -129,7 +129,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const page = sp.get("page") ?? "";
   const limit = sp.get("limit") ?? "";
   const userId = sp.get("user") ?? "";
-  const member = sp.get("member") ?? "";
+  const members = sp.get("members") ?? "";
   const posts = sp.get("posts") ?? "";
   const ownership = sp.get("ownership") ?? "";
 
@@ -137,7 +137,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     const db = createAdminClient();
     let payload: unknown = [];
 
-    if (member === "true" && tribeId && page && limit) {
+    if (members === "true" && tribeId && page && limit) {
       payload = await tribeMembers(db, tribeId, page, limit);
     } else if (posts === "true" && tribeId && page && limit) {
       payload = await tribePosts(db, tribeId, page, limit);
