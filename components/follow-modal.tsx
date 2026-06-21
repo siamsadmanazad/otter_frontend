@@ -12,6 +12,7 @@ import {
 import { getInitials } from "@/lib/name-format"
 import { useFollowApi } from "@/lib/requests"
 import axios from "axios"
+import { toast } from "sonner"
 import { useEffect, useState } from "react"
 
 interface IResponseUser {
@@ -52,6 +53,7 @@ export function FollowModal({ type, children, userId, currentLoggedInUserId }: F
         }
       } catch (error) {
         console.error("Failed to fetch data:", error);
+        toast.error("Couldn't load this list. Pull to refresh or try again.");
       }
     }
     fetchData();
@@ -73,6 +75,7 @@ export function FollowModal({ type, children, userId, currentLoggedInUserId }: F
       }
     } catch (error) {
       console.error("Failed to toggle follow status:", error)
+      toast.error("Couldn't update follow. Please try again.")
     } finally {
       setIsUpdating(false)
     }
