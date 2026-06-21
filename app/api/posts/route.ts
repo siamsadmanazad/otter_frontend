@@ -6,9 +6,34 @@ import { ok, fail } from "@/lib/api/http";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // GET /api/posts?id=<uuid>  (also accepts ?postId= — legacy) -> single post (IPostProps)
+// GET /api/posts?owner=<uuid>&page=&limit= -> that user's posts (newest-first)
 export async function GET(request: NextRequest): Promise<Response> {
   try {
     const sp = request.nextUrl.searchParams;
+    const owner = sp.get("owner");
+    if (owner?.trim()) {
+      if (!UUID_RE.test(owner)) return fail("Invalid owner ID format", 400);
+      const page = Math.max(1, parseInt(sp.get("page") || "1", 10));
+      const limit = Math.min(50, Math.max(1, parseInt(sp.get("limit") || "10", 10)));
+      const from = (page - 1) * limit;
+      const db = createAdminClient();
+      const { data: rows, error: listErr } = await db
+        .from("posts")
+        .select("id")
+        .eq("owner_id", owner)
+        .order("created_at", { ascending: false })
+        .range(from, from + limit - 1);
+      if (listErr) return fail(listErr.message, 500);
+      const ids = ((rows ?? []) as { id: string }[]).map((r) => r.id);
+      const built = await Promise.all(
+        ids.map(async (id) => {
+          const { data: p } = await db.rpc("build_post_json", { p_post_id: id });
+          return p;
+        })
+      );
+      return ok(built.filter(Boolean), "Posts retrieved successfully");
+    }
+
     const postId = sp.get("id") ?? sp.get("postId");
     if (!postId?.trim()) return fail("Post ID is required", 400);
     if (!UUID_RE.test(postId)) return fail("Invalid post ID format", 400);
