@@ -64,8 +64,11 @@ class RealtimeShim implements SocketLike {
 
   private ensureNotificationChannel() {
     if (this.channel || !this.userId || !this.handlers.has("newNotification")) return;
+    // Topic is unique per shim instance (this.id) so multiple mounts — or React's
+    // dev double-invoke — never collide on the same channel topic, which would
+    // throw "cannot add postgres_changes callbacks ... after subscribe()".
     this.channel = this.supabase
-      .channel(`notif:${this.userId}`)
+      .channel(`notif:${this.userId}:${this.id}`)
       .on(
         "postgres_changes",
         {
@@ -123,6 +126,9 @@ class RealtimeShim implements SocketLike {
       this.channel = null;
     }
     this.connected = false;
+    // Allow a remount (e.g. React's dev double-invoke) to re-establish the
+    // channel; without this, start() short-circuits and realtime stays dead.
+    this.started = false;
   }
 }
 

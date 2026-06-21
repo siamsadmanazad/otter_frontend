@@ -213,8 +213,9 @@ class ReviewAPI extends BaseAPI {
 class FeedAPI extends BaseAPI {
   public getFeed = async (profileId: string, page: number, limit: number): Promise<any> => {
     try {
+      const idParam = profileId ? `&id=${profileId}` : "";
       const response = await this.apiClient.get(
-        `/api/feed?page=${page}&limit=${limit}&id=${profileId}`
+        `/api/feed?page=${page}&limit=${limit}${idParam}`
       );
       return response.data;
     } catch (error) {
@@ -228,8 +229,9 @@ class FeedAPI extends BaseAPI {
     userId: string
   ): Promise<any> => {
     try {
+      const idParam = userId ? `&id=${userId}` : "";
       const response = await this.apiClient.get(
-        `/api/feed?page=${page}&limit=${limit}&id=${userId}`
+        `/api/feed?page=${page}&limit=${limit}${idParam}`
       );
       return response.data;
     } catch (error) {

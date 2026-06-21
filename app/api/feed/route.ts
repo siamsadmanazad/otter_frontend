@@ -4,7 +4,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // GET /api/feed?id=<viewerId>&page=&limit= -> personalized feed (public fallback) via get_feed_v2 RPC
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
-  const profileId = sp.get("id");
+  // Coalesce missing/stringified-undefined ids to null so an unauthenticated or
+  // not-yet-resolved viewer gets the public feed instead of a uuid parse error.
+  const rawId = sp.get("id");
+  const profileId =
+    rawId && rawId !== "undefined" && rawId !== "null" ? rawId : null;
   const page = parseInt(sp.get("page") || "1", 10);
   const limit = parseInt(sp.get("limit") || "10", 10);
 

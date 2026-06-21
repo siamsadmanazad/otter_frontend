@@ -1,3 +1,7 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
 const quotes = [
   "A network is your safety net, especially when you're a thousand miles from home.",
   "Travel is a breeze when you have friends in every time zone.",
@@ -18,7 +22,13 @@ function getRandomQuote() {
 }
 
 export function LoadingScreen() {
-  const quote = getRandomQuote();
+  // Start from a fixed quote so server and client first render match (avoids a
+  // hydration mismatch), then pick a random one after mount.
+  const [quote, setQuote] = useState(quotes[0]);
+
+  useEffect(() => {
+    setQuote(getRandomQuote());
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center dark:bg-gray-900">
