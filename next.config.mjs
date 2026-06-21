@@ -23,6 +23,18 @@ const securityHeaders = [
   },
 ];
 
+// Derive the Supabase Storage host from the configured project URL so image
+// optimization keeps working on any environment without editing this file.
+const supabaseHost = (() => {
+  try {
+    return process.env.NEXT_PUBLIC_SUPABASE_URL
+      ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname
+      : null;
+  } catch {
+    return null;
+  }
+})();
+
 const nextConfig = {
   devIndicators: false,
   // TypeScript errors now BLOCK the build (tsc --noEmit is clean as of W0).
@@ -33,6 +45,9 @@ const nextConfig = {
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "oveptqgoyhpgvbdfqenf.supabase.co" },
+      ...(supabaseHost && supabaseHost !== "oveptqgoyhpgvbdfqenf.supabase.co"
+        ? [{ protocol: "https", hostname: supabaseHost }]
+        : []),
       { protocol: "https", hostname: "lh3.googleusercontent.com" },
       { protocol: "https", hostname: "picsum.photos" },
       { protocol: "https", hostname: "i.pravatar.cc" },
