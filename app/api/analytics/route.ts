@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { captureRouteError } from "@/lib/observability";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -59,6 +60,9 @@ export async function GET() {
     });
   } catch (error) {
     console.error("GET /api/analytics error:", error);
+    captureRouteError("analytics load failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return NextResponse.json({ status: 500, data: {} });
   }
 }

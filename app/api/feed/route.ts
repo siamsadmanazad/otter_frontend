@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getBlockedPairIds } from "@/lib/api/blocks";
+import { captureRouteError } from "@/lib/observability";
 
 // GET /api/feed?id=<viewerId>&page=&limit= -> personalized feed (public fallback) via get_feed_v2 RPC
 export async function GET(request: NextRequest) {
@@ -45,6 +46,9 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     console.error("Error fetching feed:", err);
+    captureRouteError("feed load failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return NextResponse.json({
       message: `Failed to load posts: ${err instanceof Error ? err.message : "Unknown error"}`,
       status: 500,
