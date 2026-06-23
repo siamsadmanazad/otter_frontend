@@ -32,12 +32,20 @@ Add these under **Project → Settings → Environment Variables** (Production *
 | `RESEND_API_KEY` | transactional email |
 | `GOOGLE_GENAI_API_KEY` | Gemini (AI companions — deferred) |
 | `MODERATION_API_URL` / `MODERATION_API_KEY` | server-side image moderation (fail-open if unset) |
-| `SENTRY_DSN` | error reporting (no-op if unset) |
-| `SHOP_ENABLED` | leave unset/`false` to keep Shop hidden for launch |
-| `NEXT_PUBLIC_API_URL` | legacy alias; set only if a component still reads it |
+| `SENTRY_DSN` | error reporting on 5xx — wired into `fail()` + feed/analytics + Flutter (no-op if unset) |
 
 > The keys live in the gitignored local `.env.local`; copy the values from there. **Never**
 > expose `SUPABASE_SERVICE_ROLE_KEY` to the client (no `NEXT_PUBLIC_` prefix — keep it that way).
+
+### Not env-controlled (code constants — don't set as env vars)
+- **Shop hidden:** `SHOP_ENABLED` is a hardcoded `false` in `lib/flags.ts` (not an env var). Flip
+  it in code to re-enable Shop, not via Vercel env.
+- **`NEXT_PUBLIC_API_URL`:** dead (only a commented line in `lib/requests.ts`). The live origin var
+  is `NEXT_PUBLIC_API_BASE_URL` (above). No need to set the former.
+
+### Flutter client (separate build, not Vercel env)
+Provided at build time via `--dart-define`: `SUPABASE_URL`, `SUPABASE_ANON_KEY`,
+`API_BASE_URL` (the deployed web origin), and optional `SENTRY_DSN`.
 
 ## 3. Supabase Auth redirect URLs
 Supabase must allow the new origin or OAuth/magic-link/reset callbacks fail.
