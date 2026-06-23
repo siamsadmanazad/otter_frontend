@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getServerUser } from "@/lib/auth/server";
+import { getBlockedPairIds } from "@/lib/api/blocks";
 import { ok, fail } from "@/lib/api/http";
 
 // GET /api/search?page=&profile=&group=&shop=&hashtags=
@@ -26,6 +28,14 @@ export async function GET(request: NextRequest): Promise<Response> {
         fullName: u.full_name,
         profileImage: u.profile_image,
       }));
+      // Drop accounts in a block relationship with the searcher.
+      const viewer = await getServerUser(request);
+      if (viewer) {
+        const blocked = new Set(await getBlockedPairIds(db, viewer.id));
+        if (blocked.size) {
+          result.users = (result.users as any[]).filter((u) => !blocked.has(u.id));
+        }
+      }
     }
 
     if (hashtagsFilter) {

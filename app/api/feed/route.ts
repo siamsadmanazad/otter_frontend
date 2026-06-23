@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getBlockedPairIds } from "@/lib/api/blocks";
 
 // GET /api/feed?id=<viewerId>&page=&limit= -> personalized feed (public fallback) via get_feed_v2 RPC
 export async function GET(request: NextRequest) {
@@ -21,7 +22,15 @@ export async function GET(request: NextRequest) {
     });
     if (error) throw error;
 
-    const posts = (data as unknown[]) ?? [];
+    let posts = (data as any[]) ?? [];
+    // Hide posts authored by accounts in a block relationship with the viewer.
+    if (profileId) {
+      const blocked = await getBlockedPairIds(db, profileId);
+      if (blocked.length) {
+        const set = new Set(blocked);
+        posts = posts.filter((p) => !set.has(p?.owner?.id));
+      }
+    }
     return NextResponse.json({
       message: "Received feed data",
       status: 200,

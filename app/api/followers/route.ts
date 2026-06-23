@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createActorClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
+import { isBlockedPair } from "@/lib/api/blocks";
 import { ok, fail } from "@/lib/api/http";
 
 // POST /api/followers  body { targetUserId } -> toggle follow -> { isFollowing, followersCount }
@@ -12,6 +13,10 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     const { targetUserId } = await request.json();
     if (!targetUserId?.trim()) return fail("targetUserId is required", 400);
+
+    // Can't follow across a block (either direction).
+    if (await isBlockedPair(createAdminClient(), user.id, targetUserId))
+      return fail("You can't follow this account", 403);
 
     const supabase = await createActorClient(request);
     const { data, error } = await supabase.rpc("toggle_follow", { p_target_id: targetUserId });

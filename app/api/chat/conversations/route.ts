@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createActorClient } from "@/lib/supabase/server";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
+import { isBlockedPair } from "@/lib/api/blocks";
 import { withDefaults } from "@/lib/preferences";
 
 type Profile = {
@@ -137,6 +138,10 @@ export async function POST(request: NextRequest): Promise<Response> {
     .eq("id", targetId)
     .single();
   if (!target) return fail("User not found", 404);
+
+  // Can't start a chat across a block (either direction).
+  if (await isBlockedPair(db, me.id, targetId))
+    return fail("You can't message this account", 403);
 
   // Enforce the target's who-can-message privacy preference. Read it defensively so
   // the route keeps working before the `preferences` migration reaches an env.
