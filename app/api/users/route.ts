@@ -2,10 +2,13 @@ import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail, mapProfile } from "@/lib/api/http";
+import { canViewProfile } from "@/lib/api/visibility";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// GET /api/users?id=<uuid> — public profile + aggregate counts (IUserProfile shape)
+// GET /api/users?id=<uuid> — public profile + aggregate counts (IUserProfile shape).
+// Honors privacy.profileVisibility: non-viewers get a restricted payload (identity
+// + counts only, no bio/location/socials) with `restricted: true`.
 export async function GET(request: NextRequest): Promise<Response> {
   try {
     const userId = request.nextUrl.searchParams.get("id");
@@ -16,12 +19,15 @@ export async function GET(request: NextRequest): Promise<Response> {
     const { data: profile, error } = await db
       .from("profiles")
       .select(
-        "id, serial, username, full_name, profile_image, cover_image, bio, location, socials, email, active, role, reputation, created_at, updated_at"
+        "id, serial, username, full_name, profile_image, cover_image, bio, location, socials, email, active, role, reputation, preferences, created_at, updated_at"
       )
       .eq("id", userId)
       .single();
 
     if (error || !profile) return fail("User not found", 404);
+
+    const viewer = await getServerUser(request);
+    const allowed = await canViewProfile(db, viewer?.id ?? null, userId, profile.preferences);
 
     const [posts, comments, followers, following] = await Promise.all([
       db.from("posts").select("id", { count: "exact", head: true }).eq("owner_id", userId),
@@ -30,8 +36,11 @@ export async function GET(request: NextRequest): Promise<Response> {
       db.from("follows").select("following_id", { count: "exact", head: true }).eq("follower_id", userId),
     ]);
 
+    const mapped = mapProfile(profile);
     const data = {
-      ...mapProfile(profile),
+      ...mapped,
+      // Hide the personal detail of a restricted profile; keep identity + counts.
+      ...(allowed ? {} : { bio: "", location: "", socials: null, restricted: true }),
       profile: {
         id: profile.id,
         postsCount: posts.count ?? 0,

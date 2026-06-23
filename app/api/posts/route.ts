@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
+import { canViewProfile } from "@/lib/api/visibility";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -17,6 +18,22 @@ export async function GET(request: NextRequest): Promise<Response> {
       const limit = Math.min(50, Math.max(1, parseInt(sp.get("limit") || "10", 10)));
       const from = (page - 1) * limit;
       const db = createAdminClient();
+
+      // Respect the owner's profile visibility — a non-viewer gets no posts.
+      const { data: ownerRow } = await db
+        .from("profiles")
+        .select("preferences")
+        .eq("id", owner)
+        .single();
+      const viewer = await getServerUser(request);
+      const allowed = await canViewProfile(
+        db,
+        viewer?.id ?? null,
+        owner,
+        ownerRow?.preferences
+      );
+      if (!allowed) return ok([], "Profile is private");
+
       const { data: rows, error: listErr } = await db
         .from("posts")
         .select("id")
