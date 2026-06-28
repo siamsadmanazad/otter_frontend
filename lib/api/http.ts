@@ -29,6 +29,13 @@ export function mapTribe(t: Record<string, any> | null) {
     coverImage: t.cover_image,
     profileImage: t.profile_image,
     privacy: t.privacy,
+    // Travel-tribe identity + anchor (present once the essentials migration runs).
+    rules: t.rules ?? null,
+    destination: t.destination ?? null,
+    tripStart: t.trip_start ?? null,
+    tripEnd: t.trip_end ?? null,
+    membersCount: t.member_count ?? undefined,
+    postsCount: t.post_count ?? undefined,
     createdBy: t.created_by,
     createdAt: t.created_at,
     updatedAt: t.updated_at,

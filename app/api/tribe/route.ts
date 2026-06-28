@@ -6,7 +6,7 @@ import { ok, fail, mapTribe, mapPublicUser } from "@/lib/api/http";
 type DB = ReturnType<typeof createAdminClient>;
 
 const TRIBE_COLS =
-  "id, serial, name, description, category, tags, cover_image, profile_image, created_by, privacy, created_at, updated_at";
+  "id, serial, name, description, category, tags, cover_image, profile_image, created_by, privacy, rules, destination, trip_start, trip_end, member_count, post_count, created_at, updated_at";
 
 function range(page: string, limit: string) {
   const p = Math.max(1, parseInt(page || "1", 10));
@@ -48,10 +48,12 @@ async function tribeMembers(db: DB, tribeId: string, page: string, limit: string
   const { from, to } = range(page, limit);
   const { data } = await db
     .from("tribe_members")
-    .select("u:profiles!tribe_members_user_id_fkey(id, username, full_name, profile_image)")
+    .select("role, u:profiles!tribe_members_user_id_fkey(id, username, full_name, profile_image)")
     .eq("tribe_id", tribeId)
+    // leaders first: enum sort order is MEMBER<MODERATOR<ADMIN<FOUNDER, so desc.
+    .order("role", { ascending: false })
     .range(from, to);
-  return ((data ?? []) as any[]).map((r) => mapPublicUser(r.u));
+  return ((data ?? []) as any[]).map((r) => ({ ...mapPublicUser(r.u), role: r.role ?? "MEMBER" }));
 }
 
 async function tribePosts(db: DB, tribeId: string, page: string, limit: string) {
@@ -177,14 +179,20 @@ export async function POST(request: NextRequest): Promise<Response> {
         cover_image: b.coverImage ?? null,
         profile_image: b.profileImage ?? null,
         privacy: b.privacy ?? "PUBLIC",
+        rules: b.rules ?? null,
+        destination: b.destination ?? null,
+        trip_start: b.tripStart ?? null,
+        trip_end: b.tripEnd ?? null,
         created_by: user.id,
       })
       .select(TRIBE_COLS)
       .single();
     if (error) return fail(error.message, 500);
 
-    // creator is also a member
-    await db.from("tribe_members").insert({ tribe_id: tribe.id, user_id: user.id });
+    // creator is also a member — and the FOUNDER
+    await db
+      .from("tribe_members")
+      .insert({ tribe_id: tribe.id, user_id: user.id, role: "FOUNDER" });
     return ok(mapTribe(tribe), "Created tribe");
   } catch (e) {
     console.error("POST /api/tribe error:", e);
@@ -207,16 +215,32 @@ export async function PATCH(request: NextRequest): Promise<Response> {
       coverImage: "cover_image",
       profileImage: "profile_image",
       privacy: "privacy",
+      rules: "rules",
+      destination: "destination",
+      tripStart: "trip_start",
+      tripEnd: "trip_end",
     };
     const update: Record<string, unknown> = {};
     for (const [k, col] of Object.entries(allowed)) if (k in b) update[col] = b[k];
 
     const db = createAdminClient();
+    // Authorize: creator OR a moderator/admin/founder of this tribe may edit.
+    const { data: tribeRow } = await db
+      .from("tribes")
+      .select("id")
+      .eq("serial", serial)
+      .single();
+    if (!tribeRow) return fail("Tribe not found", 404);
+    const { data: canMod } = await db.rpc("can_moderate_tribe", {
+      p_tribe_id: tribeRow.id,
+      p_uid: user.id,
+    });
+    if (!canMod) return fail("Not allowed to edit this tribe", 403);
+
     const { data, error } = await db
       .from("tribes")
       .update(update)
       .eq("serial", serial)
-      .eq("created_by", user.id)
       .select(TRIBE_COLS)
       .single();
     if (error || !data) return fail("Failed updating tribe", 400);
