@@ -9,14 +9,27 @@ export interface IPayloadProps {
 }
 
 const TRIBE_COLS =
-  "id, serial, name, description, category, tags, cover_image, profile_image, created_by, privacy, created_at, updated_at";
+  "id, serial, name, description, category, tags, cover_image, profile_image, created_by, privacy, rules, destination, trip_start, trip_end, member_count, post_count, created_at, updated_at";
 
 async function searchTribes(searchText: string | null, payload: IPayloadProps) {
   const db = createAdminClient();
-  let q = db.from("tribes").select(TRIBE_COLS).order("created_at", { ascending: false }).limit(50);
+  // Most popular first so a bare query surfaces the liveliest communities.
+  let q = db.from("tribes").select(TRIBE_COLS).order("member_count", { ascending: false }).limit(50);
 
-  if (searchText && searchText.trim()) q = q.ilike("name", `%${searchText}%`);
-  if (payload.privacy) q = q.eq("privacy", payload.privacy);
+  const term = searchText?.trim();
+  if (term) {
+    // Match name, description, or travel destination. Strip characters that
+    // would break PostgREST's or() filter grammar before interpolating.
+    const safe = term.replace(/[,()*]/g, " ").trim();
+    if (safe) {
+      q = q.or(
+        `name.ilike.%${safe}%,description.ilike.%${safe}%,destination.ilike.%${safe}%`
+      );
+    }
+  }
+
+  // Discovery search only exposes PUBLIC tribes unless a privacy filter is set.
+  q = q.eq("privacy", payload.privacy ?? "PUBLIC");
   if (payload.category && payload.category !== "NONE" && payload.category !== "") {
     q = q.eq("category", payload.category);
   }
@@ -24,7 +37,18 @@ async function searchTribes(searchText: string | null, payload: IPayloadProps) {
 
   const { data, error } = await q;
   if (error) throw error;
-  return (data ?? []).map(mapTribe);
+
+  const tribes = (data ?? []).map(mapTribe);
+  // Lightweight relevance: name matches rank above description/destination ones.
+  if (term) {
+    const t = term.toLowerCase();
+    tribes.sort((a, b) => {
+      const an = (a?.name ?? "").toLowerCase().includes(t) ? 0 : 1;
+      const bn = (b?.name ?? "").toLowerCase().includes(t) ? 0 : 1;
+      return an - bn;
+    });
+  }
+  return tribes;
 }
 
 // POST /api/tribe/search?searchText=  body { privacy?, category?, tags? }
