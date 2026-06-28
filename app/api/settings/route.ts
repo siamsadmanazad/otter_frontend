@@ -35,6 +35,13 @@ const patchSchema = z.object({
     })
     .partial()
     .optional(),
+  onboarding: z
+    .object({
+      completed: z.boolean(),
+      interests: z.array(z.string().max(40)).max(30),
+    })
+    .partial()
+    .optional(),
 });
 
 // GET /api/settings -> the caller's preferences, merged over defaults.

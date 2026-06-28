@@ -27,10 +27,18 @@ export interface BusinessPrefs {
   contactEmail: string;
 }
 
+export interface OnboardingPrefs {
+  // Gate for the first-run onboarding flow; flips true once finished.
+  completed: boolean;
+  // Travel interests picked during onboarding (lowercase tokens).
+  interests: string[];
+}
+
 export interface Preferences {
   notifications: NotificationPrefs;
   privacy: PrivacyPrefs;
   business: BusinessPrefs;
+  onboarding: OnboardingPrefs;
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -54,6 +62,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
     website: "",
     contactEmail: "",
   },
+  onboarding: {
+    completed: false,
+    interests: [],
+  },
 };
 
 /** Merge a stored (possibly partial / `{}`) blob over the defaults. */
@@ -63,6 +75,7 @@ export function withDefaults(stored: any): Preferences {
     notifications: { ...DEFAULT_PREFERENCES.notifications, ...(s.notifications ?? {}) },
     privacy: { ...DEFAULT_PREFERENCES.privacy, ...(s.privacy ?? {}) },
     business: { ...DEFAULT_PREFERENCES.business, ...(s.business ?? {}) },
+    onboarding: { ...DEFAULT_PREFERENCES.onboarding, ...(s.onboarding ?? {}) },
   };
 }
 
@@ -73,5 +86,6 @@ export function mergePreferences(current: Preferences, patch: any): Preferences 
     notifications: { ...current.notifications, ...(p.notifications ?? {}) },
     privacy: { ...current.privacy, ...(p.privacy ?? {}) },
     business: { ...current.business, ...(p.business ?? {}) },
+    onboarding: { ...current.onboarding, ...(p.onboarding ?? {}) },
   };
 }
