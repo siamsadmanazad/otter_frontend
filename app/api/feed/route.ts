@@ -3,7 +3,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getBlockedPairIds } from "@/lib/api/blocks";
 import { captureRouteError } from "@/lib/observability";
 
-// GET /api/feed?id=<viewerId>&page=&limit= -> personalized feed (public fallback) via get_feed_v2 RPC
+// GET /api/feed?id=<viewerId>&page=&limit=&mode=foryou|following
+//   mode=following -> only posts from accounts the viewer follows (get_following_feed)
+//   otherwise      -> personalized "For You" feed w/ public fallback (get_feed_v2)
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
   // Coalesce missing/stringified-undefined ids to null so an unauthenticated or
@@ -13,14 +15,16 @@ export async function GET(request: NextRequest) {
     rawId && rawId !== "undefined" && rawId !== "null" ? rawId : null;
   const page = parseInt(sp.get("page") || "1", 10);
   const limit = parseInt(sp.get("limit") || "10", 10);
+  const mode = sp.get("mode");
 
   try {
     const db = createAdminClient();
-    const { data, error } = await db.rpc("get_feed_v2", {
-      p_viewer: profileId || null,
-      p_page: page,
-      p_limit: limit,
-    });
+    // "Following" only makes sense for a signed-in viewer; else fall back.
+    const useFollowing = mode === "following" && !!profileId;
+    const { data, error } = await db.rpc(
+      useFollowing ? "get_following_feed" : "get_feed_v2",
+      { p_viewer: profileId || null, p_page: page, p_limit: limit }
+    );
     if (error) throw error;
 
     let posts = (data as any[]) ?? [];

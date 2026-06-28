@@ -23,7 +23,9 @@ function mapUser(p: Profile | null) {
   };
 }
 
-// GET /api/chat/conversations -> the caller's conversations, newest activity first.
+// GET /api/chat/conversations?filter=inbox|requests|archived
+//   inbox (default) -> accepted && !archived · requests -> !accepted && !archived
+//   archived        -> archived
 // Actor client: RLS (cp_select_participant / conversations_select_participant) scopes
 // every read to the caller's own conversations.
 export async function GET(request: NextRequest): Promise<Response> {
@@ -31,11 +33,18 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (!me) return fail("Unauthorized", 401);
   const db = await createActorClient(request);
 
+  const filter = request.nextUrl.searchParams.get("filter") ?? "inbox";
   const { data: myRows } = await db
     .from("conversation_participants")
-    .select("conversation_id")
+    .select("conversation_id, accepted, archived")
     .eq("user_id", me.id);
-  const convIds = (myRows ?? []).map((r: any) => r.conversation_id);
+  const convIds = (myRows ?? [])
+    .filter((r: any) => {
+      if (filter === "archived") return r.archived;
+      if (filter === "requests") return !r.accepted && !r.archived;
+      return r.accepted && !r.archived; // inbox
+    })
+    .map((r: any) => r.conversation_id);
   if (convIds.length === 0) return ok([], "No conversations");
 
   const { data: convs, error } = await db
