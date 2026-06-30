@@ -51,6 +51,7 @@ const nextConfig = {
       { protocol: "https", hostname: "lh3.googleusercontent.com" },
       { protocol: "https", hostname: "picsum.photos" },
       { protocol: "https", hostname: "i.pravatar.cc" },
+      { protocol: "https", hostname: "loremflickr.com" },
     ],
   },
   async headers() {
