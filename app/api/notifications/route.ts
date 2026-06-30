@@ -27,7 +27,19 @@ function mapNotification(n: Record<string, any> | null) {
 
 const ACTOR = "actor:profiles!notifications_actor_id_fkey(id, username, full_name, profile_image)";
 
-// GET /api/notifications?page=&limit= -> current user's notifications (newest first, paginated)
+// Category filter -> the notification types it covers.
+const FILTER_TYPES: Record<string, string[]> = {
+  follows: ["FOLLOW"],
+  likes: ["LIKE"],
+  comments: ["COMMENT"],
+  mentions: ["MENTION"],
+  tribes: ["TRIBE_JOIN", "TRIBE_POST"],
+  trips: ["TRIP_REQUEST", "TRIP_ACCEPTED"],
+};
+
+// GET /api/notifications?page=&limit=&filter=&unread= -> current user's notifications
+//   filter: all | follows | likes | comments | mentions | tribes | trips
+//   unread: "true" -> only unread rows
 export async function GET(request: NextRequest): Promise<Response> {
   const user = await getServerUser(request);
   if (!user) return fail("Unauthorized", 401);
@@ -36,24 +48,39 @@ export async function GET(request: NextRequest): Promise<Response> {
   const limit = Math.min(100, Math.max(1, parseInt(sp.get("limit") || "30", 10)));
   const from = (page - 1) * limit;
   const to = from + limit - 1;
+  const filter = (sp.get("filter") || "all").toLowerCase();
+  const unread = sp.get("unread") === "true";
   const db = createAdminClient();
-  const { data, error } = await db
+  let query = db
     .from("notifications")
     .select(`id, type, target_type, target_id, message, read, created_at, read_at, ${ACTOR}`)
-    .eq("recipient_id", user.id)
+    .eq("recipient_id", user.id);
+  if (FILTER_TYPES[filter]) query = query.in("type", FILTER_TYPES[filter]);
+  if (unread) query = query.eq("read", false);
+  const { data, error } = await query
     .order("created_at", { ascending: false })
     .range(from, to);
   if (error) return fail(error.message, 500);
   return ok((data ?? []).map(mapNotification), "Notifications fetched");
 }
 
-// DELETE /api/notifications?id= -> remove one of the caller's own notifications
+// DELETE /api/notifications?id=   -> remove one of the caller's own notifications
+//        /api/notifications?all=true -> clear all of the caller's notifications
 export async function DELETE(request: NextRequest): Promise<Response> {
   const user = await getServerUser(request);
   if (!user) return fail("Unauthorized", 401);
-  const id = request.nextUrl.searchParams.get("id");
-  if (!id) return fail("Notification id is required", 400);
+  const sp = request.nextUrl.searchParams;
   const db = createAdminClient();
+  if (sp.get("all") === "true") {
+    const { error } = await db
+      .from("notifications")
+      .delete()
+      .eq("recipient_id", user.id);
+    if (error) return fail(error.message, 500);
+    return ok({ all: true }, "All notifications cleared");
+  }
+  const id = sp.get("id");
+  if (!id) return fail("Notification id is required", 400);
   const { error } = await db
     .from("notifications")
     .delete()
