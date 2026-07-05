@@ -36,7 +36,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const filter = request.nextUrl.searchParams.get("filter") ?? "inbox";
   const { data: myRows } = await db
     .from("conversation_participants")
-    .select("conversation_id, accepted, archived")
+    .select("conversation_id, accepted, archived, muted")
     .eq("user_id", me.id);
   const convIds = (myRows ?? [])
     .filter((r: any) => {
@@ -47,6 +47,9 @@ export async function GET(request: NextRequest): Promise<Response> {
     .map((r: any) => r.conversation_id);
   if (convIds.length === 0) return ok([], "No conversations");
 
+  const mutedByConv = new Map<string, boolean>();
+  for (const r of myRows ?? []) mutedByConv.set(r.conversation_id, !!r.muted);
+
   const { data: convs, error } = await db
     .from("conversations")
     .select(
@@ -56,26 +59,33 @@ export async function GET(request: NextRequest): Promise<Response> {
     .order("last_message_at", { ascending: false, nullsFirst: false });
   if (error) return fail(error.message, 500);
 
-  // All participants (with profiles) for these conversations.
+  // All participants (with profiles + delivered cursor) for these conversations.
   const { data: parts } = await db
     .from("conversation_participants")
     .select(
-      "conversation_id, user_id, profile:profiles!conversation_participants_user_id_fkey(id, username, full_name, profile_image)"
+      "conversation_id, user_id, last_delivered_at, profile:profiles!conversation_participants_user_id_fkey(id, username, full_name, profile_image)"
     )
     .in("conversation_id", convIds);
   const byConv = new Map<string, any[]>();
+  const deliveredAtByConvUser = new Map<string, Map<string, string>>();
   for (const p of parts ?? []) {
     const arr = byConv.get(p.conversation_id) ?? [];
     arr.push(p);
     byConv.set(p.conversation_id, arr);
+    if (p.last_delivered_at) {
+      const m = deliveredAtByConvUser.get(p.conversation_id) ?? new Map();
+      m.set(p.user_id, p.last_delivered_at);
+      deliveredAtByConvUser.set(p.conversation_id, m);
+    }
   }
 
-  // Last messages + my read state on them.
+  // Last messages + read state (mine, for `unread`; everyone's, for my own status).
   const lastIds = (convs ?? [])
     .map((c: any) => c.last_message_id)
     .filter(Boolean);
   const lastMsgById = new Map<string, any>();
-  const readSet = new Set<string>();
+  const readSet = new Set<string>(); // messages I've read
+  const readersByMsg = new Map<string, Set<string>>(); // message -> who read it
   if (lastIds.length) {
     const { data: msgs } = await db
       .from("messages")
@@ -84,10 +94,14 @@ export async function GET(request: NextRequest): Promise<Response> {
     for (const m of msgs ?? []) lastMsgById.set(m.id, m);
     const { data: reads } = await db
       .from("message_reads")
-      .select("message_id")
-      .eq("user_id", me.id)
+      .select("message_id, user_id")
       .in("message_id", lastIds);
-    for (const r of reads ?? []) readSet.add(r.message_id);
+    for (const r of reads ?? []) {
+      if (r.user_id === me.id) readSet.add(r.message_id);
+      const set = readersByMsg.get(r.message_id) ?? new Set();
+      set.add(r.user_id);
+      readersByMsg.set(r.message_id, set);
+    }
   }
 
   const result = (convs ?? []).map((c: any) => {
@@ -97,6 +111,18 @@ export async function GET(request: NextRequest): Promise<Response> {
         ? members.find((u: any) => u && u.id !== me.id) ?? null
         : null;
     const last = c.last_message_id ? lastMsgById.get(c.last_message_id) : null;
+
+    // Delivered/seen status for MY OWN last message (DIRECT only — a single peer).
+    let status: "sent" | "delivered" | "seen" | undefined;
+    if (last && last.sender_id === me.id && other?.id) {
+      const seenByPeer = readersByMsg.get(last.id)?.has(other.id) ?? false;
+      const peerDeliveredAt = deliveredAtByConvUser.get(c.id)?.get(other.id);
+      if (seenByPeer) status = "seen";
+      else if (peerDeliveredAt && peerDeliveredAt >= last.created_at)
+        status = "delivered";
+      else status = "sent";
+    }
+
     const lastMessage = last
       ? {
           id: last.id,
@@ -104,6 +130,7 @@ export async function GET(request: NextRequest): Promise<Response> {
           senderId: last.sender_id,
           createdAt: last.created_at,
           deleted: !!last.deleted_at,
+          status,
         }
       : null;
     const unread =
@@ -116,6 +143,8 @@ export async function GET(request: NextRequest): Promise<Response> {
       coverImage: c.cover_image,
       otherUser: other,
       members,
+      membersCount: members.length,
+      muted: mutedByConv.get(c.id) ?? false,
       lastMessage,
       lastMessageAt: c.last_message_at,
       unread,
