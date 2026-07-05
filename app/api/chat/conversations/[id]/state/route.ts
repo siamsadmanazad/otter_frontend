@@ -34,5 +34,17 @@ export async function POST(
     return ok(data, body.archived ? "Conversation archived" : "Conversation unarchived");
   }
 
+  if (typeof body.muted === "boolean") {
+    const { data, error } = await db.rpc("chat_set_muted", {
+      p_conversation: id,
+      p_muted: body.muted,
+    });
+    if (error) {
+      const status = error.code === "42501" ? 403 : 500;
+      return fail(error.message, status);
+    }
+    return ok(data, body.muted ? "Conversation muted" : "Conversation unmuted");
+  }
+
   return fail("Nothing to update", 400);
 }

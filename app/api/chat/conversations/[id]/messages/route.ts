@@ -8,13 +8,24 @@ import { enforceRateLimit } from "@/lib/ratelimit";
 // (messages_select_participant / messages_insert_sender). The isParticipant() check just
 // yields a clean 403 instead of an empty/denied result.
 
-function mapMessage(m: Record<string, any>) {
+type ReactionAgg = { emoji: string; count: number; mine: boolean };
+type ReplyPreview = { id: string; senderId: string; content: string | null; deleted: boolean };
+
+function mapMessage(
+  m: Record<string, any>,
+  reactions: ReactionAgg[] = [],
+  reply: ReplyPreview | null = null
+) {
   return {
     id: m.id,
     conversationId: m.conversation_id,
     senderId: m.sender_id,
     content: m.deleted_at ? null : m.content,
     attachments: m.deleted_at ? [] : m.attachments ?? [],
+    replyToId: m.reply_to_id ?? null,
+    replyTo: reply,
+    expiresAt: m.expires_at ?? null,
+    reactions,
     deleted: !!m.deleted_at,
     editedAt: m.edited_at,
     createdAt: m.created_at,
@@ -58,18 +69,83 @@ export async function GET(
   const before = sp.get("before");
   const limit = Math.min(50, Math.max(1, parseInt(sp.get("limit") || "30", 10)));
 
+  // "Clear chat": hide everything at/below the caller's cleared_at cursor.
+  const { data: meRow } = await db
+    .from("conversation_participants")
+    .select("cleared_at")
+    .eq("conversation_id", id)
+    .eq("user_id", me.id)
+    .maybeSingle();
+  const clearedAt: string | null = meRow?.cleared_at ?? null;
+
   let q = db
     .from("messages")
-    .select(`id, conversation_id, sender_id, content, attachments, edited_at, deleted_at, created_at, ${SENDER}`)
+    .select(
+      `id, conversation_id, sender_id, content, attachments, reply_to_id, expires_at, edited_at, deleted_at, created_at, ${SENDER}`
+    )
     .eq("conversation_id", id)
     .order("created_at", { ascending: false })
     .limit(limit);
   if (before) q = q.lt("created_at", before);
+  if (clearedAt) q = q.gt("created_at", clearedAt);
 
   const { data, error } = await q;
   if (error) return fail(error.message, 500);
+  const rows = data ?? [];
+
+  // Enrich with tapback reactions (aggregated) + a quote preview for replies.
+  const ids = rows.map((m: any) => m.id);
+  const reactionsByMsg = new Map<string, ReactionAgg[]>();
+  if (ids.length) {
+    const { data: rx } = await db
+      .from("message_reactions")
+      .select("message_id, emoji, user_id")
+      .in("message_id", ids);
+    const bucket = new Map<string, Map<string, { count: number; mine: boolean }>>();
+    for (const r of rx ?? []) {
+      const byEmoji = bucket.get(r.message_id) ?? new Map();
+      const cur = byEmoji.get(r.emoji) ?? { count: 0, mine: false };
+      cur.count += 1;
+      if (r.user_id === me.id) cur.mine = true;
+      byEmoji.set(r.emoji, cur);
+      bucket.set(r.message_id, byEmoji);
+    }
+    for (const [mid, byEmoji] of bucket) {
+      reactionsByMsg.set(
+        mid,
+        [...byEmoji.entries()].map(([emoji, v]) => ({ emoji, ...v }))
+      );
+    }
+  }
+
+  const replyIds = [
+    ...new Set(rows.map((m: any) => m.reply_to_id).filter(Boolean)),
+  ] as string[];
+  const replyById = new Map<string, ReplyPreview>();
+  if (replyIds.length) {
+    const { data: reps } = await db
+      .from("messages")
+      .select("id, sender_id, content, deleted_at")
+      .in("id", replyIds);
+    for (const r of reps ?? [])
+      replyById.set(r.id, {
+        id: r.id,
+        senderId: r.sender_id,
+        content: r.deleted_at ? null : r.content,
+        deleted: !!r.deleted_at,
+      });
+  }
+
   // Return chronological (oldest -> newest) for easy append rendering.
-  const messages = (data ?? []).map(mapMessage).reverse();
+  const messages = rows
+    .map((m: any) =>
+      mapMessage(
+        m,
+        reactionsByMsg.get(m.id) ?? [],
+        m.reply_to_id ? replyById.get(m.reply_to_id) ?? null : null
+      )
+    )
+    .reverse();
   return ok(messages, "Messages fetched");
 }
 
@@ -94,10 +170,30 @@ export async function POST(
   const content: string | undefined =
     typeof body.content === "string" ? body.content.trim() : undefined;
   const attachments = Array.isArray(body.attachments) ? body.attachments : [];
+  const replyToId: string | null =
+    typeof body.replyToId === "string" && body.replyToId ? body.replyToId : null;
   if ((!content || content.length === 0) && attachments.length === 0)
     return fail("Message content or an attachment is required", 400);
   if (content && content.length > 4000)
     return fail("Message is too long (max 4000 chars)", 400);
+
+  // A reply must quote a message from THIS conversation.
+  let reply: ReplyPreview | null = null;
+  if (replyToId) {
+    const { data: quoted } = await db
+      .from("messages")
+      .select("id, sender_id, content, deleted_at, conversation_id")
+      .eq("id", replyToId)
+      .maybeSingle();
+    if (!quoted || quoted.conversation_id !== id)
+      return fail("Reply target not found in this conversation", 400);
+    reply = {
+      id: quoted.id,
+      senderId: quoted.sender_id,
+      content: quoted.deleted_at ? null : quoted.content,
+      deleted: !!quoted.deleted_at,
+    };
+  }
 
   const { data: inserted, error } = await db
     .from("messages")
@@ -106,8 +202,11 @@ export async function POST(
       sender_id: me.id,
       content: content ?? null,
       attachments,
+      reply_to_id: replyToId,
     })
-    .select(`id, conversation_id, sender_id, content, attachments, edited_at, deleted_at, created_at, ${SENDER}`)
+    .select(
+      `id, conversation_id, sender_id, content, attachments, reply_to_id, expires_at, edited_at, deleted_at, created_at, ${SENDER}`
+    )
     .single();
   if (error || !inserted) return fail(error?.message || "Failed to send", 500);
 
@@ -117,5 +216,5 @@ export async function POST(
     .update({ last_message_id: inserted.id, last_message_at: inserted.created_at })
     .eq("id", id);
 
-  return ok(mapMessage(inserted), "Message sent");
+  return ok(mapMessage(inserted, [], reply), "Message sent");
 }
