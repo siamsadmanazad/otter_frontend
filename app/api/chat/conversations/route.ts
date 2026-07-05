@@ -36,7 +36,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const filter = request.nextUrl.searchParams.get("filter") ?? "inbox";
   const { data: myRows } = await db
     .from("conversation_participants")
-    .select("conversation_id, accepted, archived, muted")
+    .select("conversation_id, accepted, archived, muted, pinned_at")
     .eq("user_id", me.id);
   const convIds = (myRows ?? [])
     .filter((r: any) => {
@@ -48,7 +48,11 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (convIds.length === 0) return ok([], "No conversations");
 
   const mutedByConv = new Map<string, boolean>();
-  for (const r of myRows ?? []) mutedByConv.set(r.conversation_id, !!r.muted);
+  const pinnedAtByConv = new Map<string, string>();
+  for (const r of myRows ?? []) {
+    mutedByConv.set(r.conversation_id, !!r.muted);
+    if (r.pinned_at) pinnedAtByConv.set(r.conversation_id, r.pinned_at);
+  }
 
   const { data: convs, error } = await db
     .from("conversations")
@@ -89,7 +93,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (lastIds.length) {
     const { data: msgs } = await db
       .from("messages")
-      .select("id, content, sender_id, created_at, deleted_at")
+      .select("id, content, sender_id, created_at, deleted_at, attachments")
       .in("id", lastIds);
     for (const m of msgs ?? []) lastMsgById.set(m.id, m);
     const { data: reads } = await db
@@ -123,6 +127,13 @@ export async function GET(request: NextRequest): Promise<Response> {
       else status = "sent";
     }
 
+    // First attachment's type, for a media-aware preview ("📷 Photo" etc.) when
+    // there's no text content — e.g. a photo/voice message with an empty caption.
+    const attachmentType =
+      !last?.deleted_at && Array.isArray(last?.attachments) && last.attachments[0]?.type
+        ? last.attachments[0].type
+        : null;
+
     const lastMessage = last
       ? {
           id: last.id,
@@ -131,6 +142,7 @@ export async function GET(request: NextRequest): Promise<Response> {
           createdAt: last.created_at,
           deleted: !!last.deleted_at,
           status,
+          attachmentType,
         }
       : null;
     const unread =
@@ -145,11 +157,20 @@ export async function GET(request: NextRequest): Promise<Response> {
       members,
       membersCount: members.length,
       muted: mutedByConv.get(c.id) ?? false,
+      pinnedAt: pinnedAtByConv.get(c.id) ?? null,
       lastMessage,
       lastMessageAt: c.last_message_at,
       unread,
       createdAt: c.created_at,
     };
+  });
+
+  // Pinned conversations float to the top; within each group, most-recent first
+  // (already the case from the `conversations` query — a stable sort preserves it).
+  result.sort((a: any, b: any) => {
+    const ap = a.pinnedAt ? 1 : 0;
+    const bp = b.pinnedAt ? 1 : 0;
+    return bp - ap;
   });
 
   return ok(result, "Conversations fetched");

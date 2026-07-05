@@ -3,9 +3,12 @@ import { createActorClient } from "@/lib/supabase/server";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
 
-// POST /api/chat/conversations/[id]/state  body { archived?: boolean, accept?: true }
-//   accept:true        -> accept a message request (accept_conversation_request)
-//   archived:true|false -> archive / unarchive (set_conversation_archived)
+// POST /api/chat/conversations/[id]/state
+//   body { archived?, accept?, muted?, pinned? }
+//   accept:true          -> accept a message request (accept_conversation_request)
+//   archived:true|false  -> archive / unarchive (set_conversation_archived)
+//   muted:true|false     -> mute / unmute (chat_set_muted)
+//   pinned:true|false    -> pin / unpin (chat_set_pinned)
 // Actor client so the RPCs resolve auth.uid() to the caller's participant row.
 export async function POST(
   request: NextRequest,
@@ -44,6 +47,18 @@ export async function POST(
       return fail(error.message, status);
     }
     return ok(data, body.muted ? "Conversation muted" : "Conversation unmuted");
+  }
+
+  if (typeof body.pinned === "boolean") {
+    const { data, error } = await db.rpc("chat_set_pinned", {
+      p_conversation: id,
+      p_pinned: body.pinned,
+    });
+    if (error) {
+      const status = error.code === "42501" ? 403 : 500;
+      return fail(error.message, status);
+    }
+    return ok(data, body.pinned ? "Conversation pinned" : "Conversation unpinned");
   }
 
   return fail("Nothing to update", 400);
