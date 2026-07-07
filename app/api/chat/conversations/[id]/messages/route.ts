@@ -4,7 +4,13 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
 import { enforceRateLimit } from "@/lib/ratelimit";
-import { signAttachments, signAttachmentsForMessages } from "@/lib/api/chat-attachments";
+import {
+  signAttachments,
+  signAttachmentsForMessages,
+  purgeExpiredVoiceRows,
+} from "@/lib/api/chat-attachments";
+
+const VOICE_TTL_MS = 24 * 60 * 60 * 1000;
 
 const ATTACHMENT_TYPES = new Set(["image", "video", "voice"]);
 const MAX_ATTACHMENTS_PER_MESSAGE = 1;
@@ -121,6 +127,11 @@ export async function GET(
   if (error) return fail(error.message, 500);
   const rows = data ?? [];
 
+  // Lazy TTL purge (the primary mechanism — see the pg_cron migration for the
+  // DB-only backstop): strip any voice attachment past its expires_at right
+  // here, before mapping, so the caller never sees stale content/attachments.
+  await purgeExpiredVoiceRows(createAdminClient(), rows);
+
   // Enrich with tapback reactions (aggregated) + a quote preview for replies.
   const ids = rows.map((m: any) => m.id);
   const reactionsByMsg = new Map<string, ReactionAgg[]>();
@@ -228,6 +239,11 @@ export async function POST(
     };
   }
 
+  // Voice notes are ephemeral: 24h from send, enforced both by the lazy
+  // purge-on-read above and the pg_cron backstop.
+  const hasVoice = attachments.some((a) => a.type === "voice");
+  const expiresAt = hasVoice ? new Date(Date.now() + VOICE_TTL_MS).toISOString() : null;
+
   const { data: inserted, error } = await db
     .from("messages")
     .insert({
@@ -236,6 +252,7 @@ export async function POST(
       content: content ?? null,
       attachments,
       reply_to_id: replyToId,
+      expires_at: expiresAt,
     })
     .select(
       `id, conversation_id, sender_id, content, attachments, reply_to_id, expires_at, edited_at, deleted_at, created_at, ${SENDER}`

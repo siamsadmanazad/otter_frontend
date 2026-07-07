@@ -5,6 +5,7 @@ import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
 import { isBlockedPair } from "@/lib/api/blocks";
 import { withDefaults } from "@/lib/preferences";
+import { purgeExpiredVoiceRows } from "@/lib/api/chat-attachments";
 
 type Profile = {
   id: string;
@@ -93,8 +94,11 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (lastIds.length) {
     const { data: msgs } = await db
       .from("messages")
-      .select("id, content, sender_id, created_at, deleted_at, attachments")
+      .select("id, content, sender_id, created_at, deleted_at, attachments, expires_at")
       .in("id", lastIds);
+    // So an expired voice note's inbox preview ("🎤 Voice message") flips to
+    // the expired placeholder without waiting for the thread to be reopened.
+    await purgeExpiredVoiceRows(createAdminClient(), msgs ?? []);
     for (const m of msgs ?? []) lastMsgById.set(m.id, m);
     const { data: reads } = await db
       .from("message_reads")

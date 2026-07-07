@@ -11,15 +11,20 @@ import { CHAT_ATTACHMENTS_BUCKET } from "@/lib/api/chat-attachments";
 
 const MAX_IMAGE_MB = 10;
 const MAX_VIDEO_MB = 50;
+const MAX_VOICE_MB = 5;
+const MAX_VOICE_SECONDS = 130; // client caps recording at 120s; small buffer
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg", "image/gif", "image/heic"];
 const VIDEO_TYPES = ["video/mp4", "video/webm", "video/ogg", "video/mpeg", "video/quicktime", "video/x-msvideo"];
+const VOICE_TYPES = ["audio/m4a", "audio/x-m4a", "audio/mp4", "audio/aac", "audio/mpeg", "audio/wav"];
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
-// POST /api/chat/attachments (FormData { file }) -> upload a photo/video for a chat
-// message. Mirrors app/api/media/route.ts's validation/upload pattern, but targets the
-// private chat-attachments bucket under `${userId}/...` (its storage RLS is owner-path
-// scoped, so the path's first segment must be the uploader's own uid). Returns the
-// storage `path`, never a public URL — the bucket is private and a stored URL would go
+// POST /api/chat/attachments (FormData { file, duration? }) -> upload a photo,
+// video, or voice note for a chat message. Mirrors app/api/media/route.ts's
+// validation/upload pattern, but targets the private chat-attachments bucket
+// under `${userId}/...` (its storage RLS is owner-path scoped, so the path's
+// first segment must be the uploader's own uid — voice notes nest one level
+// deeper as `${userId}/voice/...`, still uid-first). Returns the storage
+// `path`, never a public URL — the bucket is private and a stored URL would go
 // stale; the chat message routes re-sign a fresh URL per-request from the path.
 export async function POST(request: NextRequest) {
   const user = await getServerUser(request);
@@ -37,16 +42,26 @@ export async function POST(request: NextRequest) {
     const mimeType = file.type;
     const isImage = IMAGE_TYPES.includes(mimeType);
     const isVideo = VIDEO_TYPES.includes(mimeType);
-    if (!isImage && !isVideo) return fail("Invalid file type.", 400);
+    const isVoice = VOICE_TYPES.includes(mimeType);
+    if (!isImage && !isVideo && !isVoice) return fail("Invalid file type.", 400);
 
-    const maxBytes = (isVideo ? MAX_VIDEO_MB : MAX_IMAGE_MB) * 1024 * 1024;
+    const maxMb = isVideo ? MAX_VIDEO_MB : isVoice ? MAX_VOICE_MB : MAX_IMAGE_MB;
+    const maxBytes = maxMb * 1024 * 1024;
     if (file.size > maxBytes) {
-      return fail(`File size exceeds ${isVideo ? MAX_VIDEO_MB : MAX_IMAGE_MB}MB limit.`, 400);
+      return fail(`File size exceeds ${maxMb}MB limit.`, 400);
+    }
+
+    let duration: number | undefined;
+    if (isVoice) {
+      const raw = Number(formData.get("duration"));
+      if (Number.isFinite(raw) && raw > 0) {
+        duration = Math.min(raw, MAX_VOICE_SECONDS);
+      }
     }
 
     let buffer = Buffer.from(await file.arrayBuffer());
     let contentType = mimeType;
-    let ext = (mimeType.split("/")[1] || "bin").replace("quicktime", "mov");
+    let ext = (mimeType.split("/")[1] || "bin").replace("quicktime", "mov").replace("x-m4a", "m4a");
 
     // Optimize still images to webp (skip gif/heic which sharp may not handle here).
     if (isImage && mimeType !== "image/gif" && mimeType !== "image/heic") {
@@ -68,7 +83,9 @@ export async function POST(request: NextRequest) {
     }
 
     const db = createAdminClient();
-    const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
+    const path = isVoice
+      ? `${user.id}/voice/${crypto.randomUUID()}.${ext}`
+      : `${user.id}/${crypto.randomUUID()}.${ext}`;
     const { error: upErr } = await db.storage.from(CHAT_ATTACHMENTS_BUCKET).upload(path, buffer, {
       contentType,
       upsert: false,
@@ -84,8 +101,9 @@ export async function POST(request: NextRequest) {
     return ok(
       {
         path,
-        type: isVideo ? "video" : "image",
+        type: isVideo ? "video" : isVoice ? "voice" : "image",
         size: buffer.length,
+        duration,
         previewUrl: signed?.signedUrl ?? null,
       },
       "Attachment uploaded"
