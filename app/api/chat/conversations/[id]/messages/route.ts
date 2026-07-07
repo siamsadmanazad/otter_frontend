@@ -9,6 +9,7 @@ import {
   signAttachmentsForMessages,
   purgeExpiredVoiceRows,
 } from "@/lib/api/chat-attachments";
+import { isBlockedInConversation } from "@/lib/api/chat-guards";
 
 const VOICE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -209,6 +210,8 @@ export async function POST(
   const db = await createActorClient(request);
   if (!(await isParticipant(db, id, me.id)))
     return fail("Not a participant of this conversation", 403);
+  if (await isBlockedInConversation(db, id, me.id))
+    return fail("You can't message this conversation", 403);
 
   const body = await request.json().catch(() => ({}));
   const content: string | undefined =

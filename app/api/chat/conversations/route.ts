@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createActorClient } from "@/lib/supabase/server";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
-import { isBlockedPair } from "@/lib/api/blocks";
+import { isBlockedPair, getBlockedPairIds } from "@/lib/api/blocks";
 import { withDefaults } from "@/lib/preferences";
 import { purgeExpiredVoiceRows } from "@/lib/api/chat-attachments";
 
@@ -112,6 +112,10 @@ export async function GET(request: NextRequest): Promise<Response> {
     }
   }
 
+  // Defense-in-depth signal for the client (banner + disable composer);
+  // actual enforcement is server-side in the messages/reactions routes.
+  const blockedIds = new Set(await getBlockedPairIds(db, me.id));
+
   const result = (convs ?? []).map((c: any) => {
     const members = (byConv.get(c.id) ?? []).map((p: any) => mapUser(p.profile));
     const other =
@@ -162,6 +166,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       membersCount: members.length,
       muted: mutedByConv.get(c.id) ?? false,
       pinnedAt: pinnedAtByConv.get(c.id) ?? null,
+      blocked: other ? blockedIds.has(other.id) : false,
       lastMessage,
       lastMessageAt: c.last_message_at,
       unread,

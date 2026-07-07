@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createActorClient } from "@/lib/supabase/server";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
+import { isBlockedInConversation } from "@/lib/api/chat-guards";
 
 // Tapback set (iMessage-style). Kept small + validated so the reactions column
 // stays a closed vocabulary.
@@ -24,6 +25,14 @@ export async function POST(
   if (!ALLOWED.has(emoji)) return fail("Unsupported reaction", 400);
 
   const db = await createActorClient(request);
+  const { data: msg } = await db
+    .from("messages")
+    .select("conversation_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (msg && (await isBlockedInConversation(db, msg.conversation_id, me.id)))
+    return fail("You can't react in this conversation", 403);
+
   const { error } = await db
     .from("message_reactions")
     .upsert(

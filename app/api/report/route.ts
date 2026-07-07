@@ -21,7 +21,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   return ok(data ?? [], "Report fetched");
 }
 
-// POST /api/report  body { data: { reportedUser, scope, reason, reasonDescription?, relatedComment?, relatedPost? } }
+// POST /api/report  body { data: { reportedUser, scope, reason, reasonDescription?, relatedComment?, relatedPost?, relatedMessage? } }
 export async function POST(request: NextRequest): Promise<Response> {
   const user = await getServerUser(request);
   if (!user) return fail("Unauthorized", 401);
@@ -39,6 +39,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         reason_description: d.reasonDescription ?? null,
         related_comment: d.relatedComment ?? null,
         related_post: d.relatedPost ?? null,
+        related_message: d.relatedMessage ?? null,
         status: "PENDING",
       })
       .select("*")
