@@ -1,8 +1,36 @@
 import { NextRequest } from "next/server";
 import { createActorClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
 import { enforceRateLimit } from "@/lib/ratelimit";
+import { signAttachments, signAttachmentsForMessages } from "@/lib/api/chat-attachments";
+
+const ATTACHMENT_TYPES = new Set(["image", "video", "voice"]);
+const MAX_ATTACHMENTS_PER_MESSAGE = 1;
+
+// Whitelist incoming attachment fields and cap the count — never trust the client's
+// shape verbatim (e.g. a stale `url` must never get persisted into the jsonb column).
+function sanitizeAttachments(input: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .filter(
+      (a): a is Record<string, unknown> =>
+        !!a &&
+        typeof a === "object" &&
+        typeof (a as Record<string, unknown>).type === "string" &&
+        ATTACHMENT_TYPES.has((a as Record<string, unknown>).type as string) &&
+        typeof (a as Record<string, unknown>).path === "string" &&
+        !!(a as Record<string, unknown>).path
+    )
+    .slice(0, MAX_ATTACHMENTS_PER_MESSAGE)
+    .map((a) => ({
+      type: a.type,
+      path: a.path,
+      size: typeof a.size === "number" ? a.size : undefined,
+      duration: typeof a.duration === "number" ? a.duration : undefined,
+    }));
+}
 
 // This route runs as the CALLER (actor client) so Postgres RLS enforces participation
 // (messages_select_participant / messages_insert_sender). The isParticipant() check just
@@ -146,7 +174,12 @@ export async function GET(
       )
     )
     .reverse();
-  return ok(messages, "Messages fetched");
+
+  // Resolve attachment paths to fresh signed URLs. Requires the admin client:
+  // chat-attachments' storage RLS is owner-path-scoped, so a caller reading a
+  // conversation peer's attachment could never sign it via their own actor client.
+  const signed = await signAttachmentsForMessages(createAdminClient(), messages);
+  return ok(signed, "Messages fetched");
 }
 
 // POST /api/chat/conversations/[id]/messages  body { content, attachments? } -> send a message.
@@ -169,7 +202,7 @@ export async function POST(
   const body = await request.json().catch(() => ({}));
   const content: string | undefined =
     typeof body.content === "string" ? body.content.trim() : undefined;
-  const attachments = Array.isArray(body.attachments) ? body.attachments : [];
+  const attachments = sanitizeAttachments(body.attachments);
   const replyToId: string | null =
     typeof body.replyToId === "string" && body.replyToId ? body.replyToId : null;
   if ((!content || content.length === 0) && attachments.length === 0)
@@ -216,5 +249,7 @@ export async function POST(
     .update({ last_message_id: inserted.id, last_message_at: inserted.created_at })
     .eq("id", id);
 
-  return ok(mapMessage(inserted, [], reply), "Message sent");
+  const mapped = mapMessage(inserted, [], reply);
+  const signedAttachments = await signAttachments(createAdminClient(), mapped.attachments);
+  return ok({ ...mapped, attachments: signedAttachments }, "Message sent");
 }
