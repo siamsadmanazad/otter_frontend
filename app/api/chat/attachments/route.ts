@@ -61,7 +61,12 @@ export async function POST(request: NextRequest) {
 
     let buffer = Buffer.from(await file.arrayBuffer());
     let contentType = mimeType;
-    let ext = (mimeType.split("/")[1] || "bin").replace("quicktime", "mov").replace("x-m4a", "m4a");
+    // audio/mp4 is the canonical MIME for an M4A/AAC container (many mime
+    // libraries, including the client's, report m4a files this way) — keep
+    // the file extension as .m4a for voice notes rather than the misleading .mp4.
+    let ext = isVoice
+      ? "m4a"
+      : (mimeType.split("/")[1] || "bin").replace("quicktime", "mov").replace("x-m4a", "m4a");
 
     // Optimize still images to webp (skip gif/heic which sharp may not handle here).
     if (isImage && mimeType !== "image/gif" && mimeType !== "image/heic") {
