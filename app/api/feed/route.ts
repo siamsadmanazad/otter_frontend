@@ -6,6 +6,13 @@ import { captureRouteError } from "@/lib/observability";
 // GET /api/feed?id=<viewerId>&page=&limit=&mode=foryou|following
 //   mode=following -> only posts from accounts the viewer follows (get_following_feed)
 //   otherwise      -> personalized "For You" feed w/ public fallback (get_feed_v2)
+//
+// Scale plan B1: when the client sends `v=3` (For You only), serve get_feed_v3 —
+// bounded payload (counts + likedByViewer + top-2 comments, not full arrays) +
+// keyset cursor pagination. Response shape becomes `data: { posts, nextCursor,
+// served }`. If get_feed_v3 isn't deployed yet, we GRACEFULLY FALL BACK to the
+// page-based v2 (served:"v2", nextCursor:null) so the feed never breaks — the
+// client keys off `served` to pick cursor- vs page-pagination.
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
   // Coalesce missing/stringified-undefined ids to null so an unauthenticated or
@@ -16,9 +23,65 @@ export async function GET(request: NextRequest) {
   const page = parseInt(sp.get("page") || "1", 10);
   const limit = parseInt(sp.get("limit") || "10", 10);
   const mode = sp.get("mode");
+  const wantsV3 = sp.get("v") === "3";
+  const clean = (v: string | null) =>
+    v && v !== "null" && v !== "undefined" ? v : null;
+  const cursorAt = clean(sp.get("cursorAt"));
+  const cursorId = clean(sp.get("cursorId"));
+
+  // Shared block-filter so v3 and v2 paths behave identically.
+  const filterBlocked = async (db: any, posts: any[]) => {
+    if (!profileId || posts.length === 0) return posts;
+    const blocked = await getBlockedPairIds(db, profileId);
+    if (!blocked.length) return posts;
+    const set = new Set(blocked);
+    return posts.filter((p) => !set.has(p?.owner?.id));
+  };
+
+  const db = createAdminClient();
+
+  // --- B1: bounded, keyset-paginated "For You" feed (with graceful v2 fallback)
+  if (wantsV3 && !(mode === "following" && !!profileId)) {
+    try {
+      const { data, error } = await db.rpc("get_feed_v3", {
+        p_viewer: profileId || null,
+        p_cursor_at: cursorAt,
+        p_cursor_id: cursorId,
+        p_limit: limit,
+      });
+      if (error) throw error;
+      const posts = await filterBlocked(db, (data?.posts as any[]) ?? []);
+      return NextResponse.json({
+        message: "Received feed data",
+        status: 200,
+        data: { posts, nextCursor: data?.nextCursor ?? null, served: "v3" },
+      });
+    } catch (err) {
+      // get_feed_v3 not deployed yet (or errored) -> degrade to v2, page-based.
+      captureRouteError("feed v3 unavailable, falling back to v2", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      const { data, error } = await db.rpc("get_feed_v2", {
+        p_viewer: profileId || null,
+        p_page: page,
+        p_limit: limit,
+      });
+      if (error) throw error;
+      const posts = await filterBlocked(db, (data as any[]) ?? []);
+      return NextResponse.json({
+        message: "Received feed data",
+        status: 200,
+        data: {
+          posts,
+          nextCursor: null,
+          served: "v2",
+          hasMore: posts.length === limit,
+        },
+      });
+    }
+  }
 
   try {
-    const db = createAdminClient();
     // "Following" only makes sense for a signed-in viewer; else fall back.
     const useFollowing = mode === "following" && !!profileId;
     const { data, error } = await db.rpc(
