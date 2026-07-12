@@ -27,7 +27,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     ).slice(0, MAX_CELLS);
 
     if (cells.length === 0) {
-      return ok({ people: [], places: [], tribes: [] }, "No cells");
+      return ok({ people: [], individuals: [], places: [], tribes: [] }, "No cells");
     }
 
     const filters =
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     });
     if (error) return fail(error.message, 500);
 
-    return ok(data ?? { people: [], places: [], tribes: [] }, "Nearby");
+    return ok(data ?? { people: [], individuals: [], places: [], tribes: [] }, "Nearby");
   } catch (e) {
     console.error("POST /api/radar/nearby error:", e);
     return fail("Failed loading nearby", 500);

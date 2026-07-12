@@ -27,6 +27,8 @@ export async function POST(request: NextRequest): Promise<Response> {
       typeof body?.nicheId === "string" && UUID_RE.test(body.nicheId)
         ? body.nicheId
         : null;
+    // Opt-in wave-able visibility (Phase 5.2) — default off.
+    const isWaveable = body?.isWaveable === true;
 
     // A ghost write needs no cells (the row is deleted); a live write must carry
     // valid fuzzed cells.
@@ -40,6 +42,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       p_h3_index_coarse: isGhost ? "0" : h3IndexCoarse,
       p_niche_id: nicheId,
       p_is_ghost: isGhost,
+      p_is_waveable: isWaveable,
     });
     if (error) return fail(error.message, 500);
 
