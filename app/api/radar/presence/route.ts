@@ -37,7 +37,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     const supabase = await createActorClient(request);
-    const { error } = await supabase.rpc("radar_upsert_presence", {
+    const { data, error } = await supabase.rpc("radar_upsert_presence", {
       p_h3_index: isGhost ? "0" : h3Index,
       p_h3_index_coarse: isGhost ? "0" : h3IndexCoarse,
       p_niche_id: nicheId,
@@ -46,7 +46,12 @@ export async function POST(request: NextRequest): Promise<Response> {
     });
     if (error) return fail(error.message, 500);
 
-    return ok({ ghost: isGhost }, isGhost ? "Presence cleared" : "Presence updated");
+    // questsCompleted (Otter Radar Phase 6.2): any visit_place quest this
+    // heartbeat's cell just satisfied.
+    return ok(
+      { ghost: isGhost, questsCompleted: data?.questsCompleted ?? [] },
+      isGhost ? "Presence cleared" : "Presence updated"
+    );
   } catch (e) {
     console.error("POST /api/radar/presence error:", e);
     return fail("Failed updating presence", 500);
