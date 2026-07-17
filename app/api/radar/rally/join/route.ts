@@ -37,6 +37,8 @@ export async function POST(request: NextRequest): Promise<Response> {
       if (/\bfull\b/i.test(msg)) return fail("This one’s full", 409);
       if (/closed/i.test(msg)) return fail("This rally has wrapped up", 409);
       if (/not found/i.test(msg)) return fail("Rally not found", 404);
+      // Phase 7.1: server-side proximity check (coarse-cell match).
+      if (/too far/i.test(msg)) return fail("Too far away to join", 403);
       return fail(msg, 500);
     }
     return ok(data, "Joined rally");

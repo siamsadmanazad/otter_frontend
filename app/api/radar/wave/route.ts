@@ -32,6 +32,10 @@ export async function POST(request: NextRequest): Promise<Response> {
       const msg = error.message || "";
       if (/rate limited/i.test(msg)) return fail("Slow down a little 👋", 429);
       if (/blocked/i.test(msg)) return fail("You can’t wave this explorer", 403);
+      // Phase 7.1: server-side proximity check (coarse-cell match).
+      if (/no active location/i.test(msg))
+        return fail("Turn on your location to wave", 400);
+      if (/too far/i.test(msg)) return fail("They’re too far away to wave", 403);
       return fail(msg, 500);
     }
     return ok(data, "Wave sent");
