@@ -34,6 +34,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     if (error) {
       const msg = error.message || "";
       if (/blocked/i.test(msg)) return fail("You can’t join this rally", 403);
+      if (/\bfull\b/i.test(msg)) return fail("This one’s full", 409);
       if (/closed/i.test(msg)) return fail("This rally has wrapped up", 409);
       if (/not found/i.test(msg)) return fail("Rally not found", 404);
       return fail(msg, 500);

@@ -8,10 +8,12 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // POST /api/radar/rally
-// body: { title, note?, placeId?, nicheId?, h3Index, h3IndexCoarse, ttlMinutes? }
-// Spins up a short-lived nearby rally via radar_create_rally (rate-limited,
-// auto-joins the host, broadcasts a live-buzz pulse). Otter Radar Phase 5.3 —
-// the rally then rides radar_nearby so nearby explorers see and can join it.
+// body: { title, note?, placeId?, nicheId?, h3Index, h3IndexCoarse, ttlMinutes?,
+//         kind? ('RALLY'|'ACTIVITY'), startsAt?, capacity? }
+// Spins up a short-lived nearby rally — or, with kind:'ACTIVITY', a scheduled
+// capacity-bounded Local Activity (Otter Radar Phase 6.3) — via
+// radar_create_rally (rate-limited, auto-joins the host, broadcasts a
+// live-buzz pulse). Rides radar_nearby so nearby explorers see and can join it.
 export async function POST(request: NextRequest): Promise<Response> {
   const user = await getServerUser(request);
   if (!user) return fail("Unauthorized", 401);
@@ -43,6 +45,18 @@ export async function POST(request: NextRequest): Promise<Response> {
       typeof body?.ttlMinutes === "number" && Number.isFinite(body.ttlMinutes)
         ? Math.trunc(body.ttlMinutes)
         : 120;
+    const kind = body?.kind === "ACTIVITY" ? "ACTIVITY" : "RALLY";
+    const startsAt =
+      typeof body?.startsAt === "string" && !Number.isNaN(Date.parse(body.startsAt))
+        ? body.startsAt
+        : null;
+    const capacity =
+      typeof body?.capacity === "number" &&
+      Number.isFinite(body.capacity) &&
+      body.capacity >= 1 &&
+      body.capacity <= 500
+        ? Math.trunc(body.capacity)
+        : null;
 
     const supabase = await createActorClient(request);
     const { data, error } = await supabase.rpc("radar_create_rally", {
@@ -53,6 +67,9 @@ export async function POST(request: NextRequest): Promise<Response> {
       p_place_id: placeId,
       p_niche_id: nicheId,
       p_ttl_minutes: ttl,
+      p_kind: kind,
+      p_starts_at: startsAt,
+      p_capacity: capacity,
     });
     if (error) {
       const msg = error.message || "";
@@ -60,7 +77,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         return fail("You’ve started a lot of rallies — take a breather 🎈", 429);
       return fail(msg, 500);
     }
-    return ok(data, "Rally started");
+    return ok(data, kind === "ACTIVITY" ? "Activity created" : "Rally started");
   } catch (e) {
     console.error("POST /api/radar/rally error:", e);
     return fail("Failed starting rally", 500);
