@@ -5,8 +5,21 @@
 import { NextResponse } from "next/server";
 import { captureRouteError } from "@/lib/observability";
 
-export function ok(data: unknown, message = "OK", status = 200) {
-  return NextResponse.json({ message, status, data }, { status });
+export function ok(
+  data: unknown,
+  message = "OK",
+  status = 200,
+  // Phase 3 (graceful degradation, D14): when a route's primary data loaded
+  // fine but a secondary enrichment step failed, set `partial: true` so the
+  // client can render the primary data with a "some info unavailable"
+  // affordance instead of either erroring wholesale or silently showing
+  // possibly-wrong fallback values (e.g. a count coalesced to 0).
+  partial = false
+) {
+  return NextResponse.json(
+    { message, status, data, ...(partial ? { partial: true } : {}) },
+    { status }
+  );
 }
 
 export function fail(message: string, status = 500, data: unknown = null) {

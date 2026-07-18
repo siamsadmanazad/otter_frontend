@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail, mapProfile } from "@/lib/api/http";
 import { canViewProfile } from "@/lib/api/visibility";
+import { captureRouteError } from "@/lib/observability";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -36,11 +37,26 @@ export async function GET(request: NextRequest): Promise<Response> {
       db.from("follows").select("following_id", { count: "exact", head: true }).eq("follower_id", userId),
     ]);
 
+    // Secondary enrichment (D14): these 4 count queries can fail independently
+    // of the primary profile fetch. supabase-js resolves with `{ error }`
+    // rather than rejecting, so a failure here would otherwise be silently
+    // coalesced into a misleading "0" via `?? 0` below. Surface it instead.
+    const countErrors = [posts.error, comments.error, followers.error, following.error].filter(Boolean);
+    if (countErrors.length) {
+      captureRouteError("profile counts enrichment degraded", {
+        userId,
+        errors: countErrors.map((e) => e!.message),
+      });
+    }
+
     const mapped = mapProfile(profile);
     const data = {
       ...mapped,
       // Hide the personal detail of a restricted profile; keep identity + counts.
       ...(allowed ? {} : { bio: "", location: "", socials: null, restricted: true }),
+      // Embedded (not just the top-level envelope) because the mobile client's
+      // ApiClient unwraps to `body.data` and drops sibling envelope keys.
+      ...(countErrors.length ? { partial: true } : {}),
       profile: {
         id: profile.id,
         postsCount: posts.count ?? 0,
@@ -51,7 +67,7 @@ export async function GET(request: NextRequest): Promise<Response> {
         updatedAt: profile.updated_at,
       },
     };
-    return ok(data, "User data retrieved successfully");
+    return ok(data, "User data retrieved successfully", 200, countErrors.length > 0);
   } catch (e) {
     console.error("GET /api/users error:", e);
     return fail("Internal server error", 500);
