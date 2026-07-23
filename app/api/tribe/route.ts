@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail, mapTribe, mapPublicUser } from "@/lib/api/http";
+import { captureRouteError } from "@/lib/observability";
 
 type DB = ReturnType<typeof createAdminClient>;
 
@@ -22,15 +23,29 @@ async function tribeDetail(db: DB, col: "id" | "serial", val: string) {
     .eq(col, val)
     .single();
   if (!t) return null;
-  const [{ count: usersCount }, { count: postsCount }] = await Promise.all([
+  const [users, posts] = await Promise.all([
     db.from("tribe_members").select("user_id", { count: "exact", head: true }).eq("tribe_id", t.id),
     db.from("posts").select("id", { count: "exact", head: true }).eq("tribe_id", t.id),
   ]);
+  // Secondary enrichment (D14, same pattern as GET /api/users): these 2 count
+  // queries can fail independently of the primary tribe fetch. supabase-js
+  // resolves with `{ error }` rather than rejecting, so a failure here would
+  // otherwise be silently coalesced into a misleading "0" via `?? 0` below.
+  const countErrors = [users.error, posts.error].filter(Boolean);
+  if (countErrors.length) {
+    captureRouteError("tribe counts enrichment degraded", {
+      tribeId: t.id,
+      errors: countErrors.map((e) => e!.message),
+    });
+  }
   return {
     ...mapTribe(t),
     createdBy: mapPublicUser((t as any).creator),
-    usersCount: usersCount ?? 0,
-    postsCount: postsCount ?? 0,
+    usersCount: users.count ?? 0,
+    postsCount: posts.count ?? 0,
+    // Embedded (not just the top-level envelope) because the mobile client's
+    // ApiClient unwraps to `body.data` and drops sibling envelope keys.
+    ...(countErrors.length ? { partial: true } : {}),
   };
 }
 
@@ -154,7 +169,8 @@ export async function GET(request: NextRequest): Promise<Response> {
     } else if (serial) {
       payload = await tribeDetail(db, "serial", serial);
     }
-    return ok(payload, "Get tribes");
+    const partial = Boolean(payload && typeof payload === "object" && (payload as any).partial);
+    return ok(payload, "Get tribes", 200, partial);
   } catch (e) {
     console.error("GET /api/tribe error:", e);
     return fail("Internal server error", 500);
