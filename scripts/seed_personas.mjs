@@ -58,8 +58,27 @@ const JUNK_TRIBES = ["H1 Retry 1782205155"];
 
 const email = (key) => `otter.demo+${key}@tripotter.app`;
 const avatar = (id) => `https://i.pravatar.cc/400?u=${id}`;
-const photo = (kw, lock) =>
-  `https://loremflickr.com/900/700/${encodeURIComponent(kw)}?lock=${lock}`;
+
+// Rotating pixel-dimension buckets so seeded posts exercise every ratio the
+// feed's mapToDisplayRatio() maps to (see otter_flutter/lib/core/feed_design.dart)
+// instead of every demo photo landing on the same fixed landscape shape. Every
+// prior version of this helper requested a flat 900x700 for every keyword
+// regardless of subject — which meant the feed *looked* uniformly landscape
+// not because real photos are landscape, but because the placeholder service
+// was only ever asked for landscape pixels. Picked to land close to the
+// FeedDisplayRatio enum's own values so the mapping is unambiguous:
+//   storyTile 2:3 · softPortrait 4:5 · square 1:1 · softLandscape 4:3 · wideLandscape 16:9
+const PHOTO_DIMS = [
+  [700, 1050], // storyTile    (2/3  = 0.667)
+  [800, 1000], // softPortrait (4/5  = 0.8)
+  [900, 900], // square        (1/1  = 1.0)
+  [900, 675], // softLandscape (4/3  = 1.333)
+  [960, 540], // wideLandscape (16/9 = 1.778)
+];
+const photo = (kw, lock) => {
+  const [w, h] = PHOTO_DIMS[lock % PHOTO_DIMS.length];
+  return `https://loremflickr.com/${w}/${h}/${encodeURIComponent(kw)}?lock=${lock}`;
+};
 
 // --- the roster -------------------------------------------------------------
 let LOCK = 100; // deterministic loremflickr image seed
