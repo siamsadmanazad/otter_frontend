@@ -1,41 +1,47 @@
 import { NextRequest } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createActorClient } from "@/lib/supabase/server";
+import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
 
-// GET /api/posts/[postId]/comments -> comments for a post (newest first)
+// GET /api/posts/[postId]/comments?page=&limit=  -> top-level comments,
+// newest first, each carrying its own replyCount/likeCount/iLiked.
+// GET /api/posts/[postId]/comments?parent=<uuid>&page=&limit=  -> that
+// parent's replies, oldest first (a conversation, not a feed).
+//
+// Comments are public read (RLS: comments_select_all), so this never gates
+// on login — an anonymous caller gets the same list with iLiked always
+// false (p_viewer null). feed_detail_split.md A4/F6.
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ postId: string }> }
 ): Promise<Response> {
   try {
     const { postId } = await params;
     if (!postId?.trim()) return fail("Post ID is required", 400);
 
-    const db = createAdminClient();
-    const { data, error } = await db
-      .from("comments")
-      .select(
-        "id, content, created_at, updated_at, post_id, owner:profiles!comments_owner_id_fkey(id, username, full_name, profile_image)"
-      )
-      .eq("post_id", postId)
-      .order("created_at", { ascending: false });
-    if (error) return fail(error.message, 500);
+    const sp = request.nextUrl.searchParams;
+    const parentId = sp.get("parent");
+    const page = Math.max(1, parseInt(sp.get("page") || "1", 10));
+    const limit = Math.min(50, Math.max(1, parseInt(sp.get("limit") || "20", 10)));
 
-    const comments = (data ?? []).map((c: Record<string, any>) => ({
-      id: c.id,
-      content: c.content,
-      createdAt: c.created_at,
-      updatedAt: c.updated_at,
-      owner: c.owner
-        ? {
-            id: c.owner.id,
-            username: c.owner.username,
-            fullName: c.owner.full_name,
-            profileImage: c.owner.profile_image,
-          }
-        : undefined,
-    }));
-    return ok(comments, "Comments retrieved");
+    const user = await getServerUser(request);
+    const supabase = await createActorClient(request);
+
+    const { data, error } = parentId
+      ? await supabase.rpc("get_comment_replies", {
+          p_parent_id: parentId,
+          p_viewer: user?.id ?? null,
+          p_page: page,
+          p_limit: limit,
+        })
+      : await supabase.rpc("get_post_comments", {
+          p_post_id: postId,
+          p_viewer: user?.id ?? null,
+          p_page: page,
+          p_limit: limit,
+        });
+    if (error) return fail(error.message, 500);
+    return ok(data ?? [], "Comments retrieved");
   } catch (e) {
     console.error("GET /api/posts/[postId]/comments error:", e);
     return fail("Internal server error", 500);

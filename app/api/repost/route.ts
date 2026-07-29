@@ -6,21 +6,36 @@ import { enforceRateLimit } from "@/lib/ratelimit";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// GET /api/repost?owner=<uuid>&page=&limit=  -> posts <owner> has echoed, newest first.
-// Public (reposts are visible acts, not bookmarks) — uses the actor client only
-// so a signed-in caller's own isReposted state comes back correctly; an
-// anonymous caller still gets the list, with isReposted always false.
+// GET /api/repost?owner=<uuid>&page=&limit=  -> posts <owner> has echoed,
+// newest first (the Reposts profile tab).
+// GET /api/repost?post=<uuid>&page=&limit=  -> people who echoed that post,
+// newest first (the room's people sheet, feed_detail_split.md D1/A4).
+// Public (reposts are visible acts, not bookmarks) — uses the actor client
+// only so a signed-in caller's own isReposted state comes back correctly on
+// the owner mode; an anonymous caller still gets the list.
 export async function GET(request: NextRequest): Promise<Response> {
   try {
     const sp = request.nextUrl.searchParams;
     const owner = sp.get("owner");
-    if (!owner?.trim()) return fail("owner is required", 400);
-    if (!UUID_RE.test(owner)) return fail("Invalid owner ID format", 400);
+    const post = sp.get("post");
+    if (!owner?.trim() && !post?.trim()) return fail("owner or post is required", 400);
 
     const page = Math.max(1, parseInt(sp.get("page") || "1", 10));
     const limit = Math.min(50, Math.max(1, parseInt(sp.get("limit") || "15", 10)));
-
     const supabase = await createActorClient(request);
+
+    if (post?.trim()) {
+      if (!UUID_RE.test(post)) return fail("Invalid post ID format", 400);
+      const { data, error } = await supabase.rpc("get_post_echoers", {
+        p_post_id: post,
+        p_page: page,
+        p_limit: limit,
+      });
+      if (error) return fail(error.message, 500);
+      return ok(data ?? [], "Echoers retrieved successfully");
+    }
+
+    if (!UUID_RE.test(owner!)) return fail("Invalid owner ID format", 400);
     const { data, error } = await supabase.rpc("get_user_reposts", {
       p_user_id: owner,
       p_page: page,

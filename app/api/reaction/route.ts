@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server";
 import { createActorClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
 import { enforceRateLimit } from "@/lib/ratelimit";
@@ -33,27 +32,27 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 }
 
-// GET /api/reaction?id=<postId>  (also ?postId=) -> users who liked
+// GET /api/reaction?id=<postId>&page=&limit=  (also ?postId=) -> users who
+// liked, newest first. Now paginated via get_post_likers (feed_detail_split.md
+// A4) — previously an unpaginated raw select with zero Flutter consumer;
+// the room's people sheet (D1) is the first real caller.
 export async function GET(request: NextRequest): Promise<Response> {
   try {
     const sp = request.nextUrl.searchParams;
     const postId = sp.get("id") ?? sp.get("postId");
     if (!postId?.trim()) return fail("Post ID is required", 400);
 
-    const db = createAdminClient();
-    const { data, error } = await db
-      .from("likes")
-      .select("user:profiles!likes_user_id_fkey(id, username, full_name, profile_image)")
-      .eq("post_id", postId);
-    if (error) return fail(error.message, 500);
+    const page = Math.max(1, parseInt(sp.get("page") || "1", 10));
+    const limit = Math.min(50, Math.max(1, parseInt(sp.get("limit") || "20", 10)));
 
-    const users = ((data ?? []) as any[]).map((row: any) => ({
-      id: row.user?.id,
-      username: row.user?.username,
-      fullName: row.user?.full_name,
-      profileImage: row.user?.profile_image,
-    }));
-    return ok(users, "Retrieved likes");
+    const supabase = await createActorClient(request);
+    const { data, error } = await supabase.rpc("get_post_likers", {
+      p_post_id: postId,
+      p_page: page,
+      p_limit: limit,
+    });
+    if (error) return fail(error.message, 500);
+    return ok(data ?? [], "Retrieved likes");
   } catch (e) {
     console.error("GET /api/reaction error:", e);
     return fail("Internal server error", 500);
