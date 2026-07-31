@@ -116,7 +116,13 @@ export async function GET(request: NextRequest): Promise<Response> {
   // actual enforcement is server-side in the messages/reactions routes.
   const blockedIds = new Set(await getBlockedPairIds(db, me.id));
 
-  const result = (convs ?? []).map((c: any) => {
+  // A DIRECT conversation with no resolvable peer (the other participant row
+  // is missing, or its profile failed to join) is dead data — surfacing it
+  // renders as an unopenable "Conversation" row with a blank avatar. Drop it
+  // rather than return it.
+  const result = (convs ?? [])
+    .filter((c: any) => c.type !== "DIRECT" || (byConv.get(c.id) ?? []).length > 1)
+    .map((c: any) => {
     const members = (byConv.get(c.id) ?? []).map((p: any) => mapUser(p.profile));
     const other =
       c.type === "DIRECT"
