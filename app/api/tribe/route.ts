@@ -89,12 +89,34 @@ async function tribePosts(db: DB, tribeId: string, page: string, limit: string) 
   return posts.filter(Boolean);
 }
 
+// Onboarding step 1 ("What moves you?") writes free-text interest picks;
+// tribe `category` is a fixed enum while `tags` is free-form, so an interest
+// can land in either. Case-insensitive overlap on both, no match required —
+// callers with no interests (or no overlap in the fetched page) just get the
+// unranked, most-recent-first order back unchanged.
+function rankByInterests<T extends { category?: string | null; tags?: string[] | null }>(
+  tribes: T[],
+  interests: string[]
+): T[] {
+  if (interests.length === 0) return tribes;
+  const wanted = new Set(interests.map((i) => i.toLowerCase()));
+  const overlaps = (t: T) => {
+    const cat = (t.category ?? "").toLowerCase();
+    const tags = (t.tags ?? []).map((x) => x.toLowerCase());
+    return wanted.has(cat) || tags.some((tag) => wanted.has(tag));
+  };
+  // Stable partition (Array#sort is stable in V8): matches first, each group
+  // keeps its original recency order.
+  return [...tribes].sort((a, b) => Number(overlaps(b)) - Number(overlaps(a)));
+}
+
 async function tribesByOwnership(
   db: DB,
   ownership: string,
   userId: string,
   page: string,
-  limit: string
+  limit: string,
+  interests: string[] = []
 ) {
   const { from, to } = range(page || "1", limit || "50");
   if (ownership === "created") {
@@ -133,7 +155,8 @@ async function tribesByOwnership(
     .range(from, to);
   if (joinedIds.length > 0) q = q.not("id", "in", `(${joinedIds.join(",")})`);
   const { data } = await q;
-  return (data ?? []).map(mapTribe);
+  const mapped = (data ?? []).map(mapTribe).filter((t): t is NonNullable<typeof t> => t !== null);
+  return rankByInterests(mapped, interests);
 }
 
 export async function GET(request: NextRequest): Promise<Response> {
@@ -149,6 +172,10 @@ export async function GET(request: NextRequest): Promise<Response> {
   const members = sp.get("members") ?? "";
   const posts = sp.get("posts") ?? "";
   const ownership = sp.get("ownership") ?? "";
+  const interests = (sp.get("interests") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   try {
     const db = createAdminClient();
@@ -159,7 +186,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     } else if (posts === "true" && tribeId && page && limit) {
       payload = await tribePosts(db, tribeId, page, limit);
     } else if (ownership) {
-      payload = await tribesByOwnership(db, ownership, user.id, page, limit);
+      payload = await tribesByOwnership(db, ownership, user.id, page, limit, interests);
     } else if (page && limit) {
       payload = await listTribes(db, page, limit);
     } else if (tribeId) {
