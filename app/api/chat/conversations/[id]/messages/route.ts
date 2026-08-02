@@ -9,7 +9,7 @@ import {
   signAttachmentsForMessages,
   purgeExpiredVoiceRows,
 } from "@/lib/api/chat-attachments";
-import { isBlockedInConversation } from "@/lib/api/chat-guards";
+import { isBlockedInConversation, isParticipant } from "@/lib/api/chat-guards";
 
 const VOICE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -49,7 +49,8 @@ type ReplyPreview = { id: string; senderId: string; content: string | null; dele
 function mapMessage(
   m: Record<string, any>,
   reactions: ReactionAgg[] = [],
-  reply: ReplyPreview | null = null
+  reply: ReplyPreview | null = null,
+  viewerId?: string
 ) {
   return {
     id: m.id,
@@ -60,6 +61,13 @@ function mapMessage(
     replyToId: m.reply_to_id ?? null,
     replyTo: reply,
     expiresAt: m.expires_at ?? null,
+    // Listen-once (V2, docs/navbar_physics_and_voice_calls.md): the client
+    // never gets a playable url from this route for these — see
+    // signAttachmentsForMessages. `voicePlayed`/`voicePlayedByMe` tell it
+    // whether to render the spent state without waiting on a failed fetch.
+    listenOnce: !!m.listen_once,
+    voicePlayed: !!m.voice_played_at,
+    voicePlayedByMe: !!viewerId && m.voice_played_by === viewerId,
     reactions,
     deleted: !!m.deleted_at,
     editedAt: m.edited_at,
@@ -75,18 +83,10 @@ function mapMessage(
   };
 }
 
-async function isParticipant(db: any, conversationId: string, userId: string) {
-  const { data } = await db
-    .from("conversation_participants")
-    .select("user_id")
-    .eq("conversation_id", conversationId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  return !!data;
-}
-
 const SENDER =
   "sender:profiles!messages_sender_id_fkey(id, username, full_name, profile_image)";
+const MESSAGE_COLUMNS =
+  `id, conversation_id, sender_id, content, attachments, reply_to_id, expires_at, listen_once, voice_played_at, voice_played_by, edited_at, deleted_at, created_at, ${SENDER}` as const;
 
 // GET /api/chat/conversations/[id]/messages?before=&limit=  -> messages, newest first.
 export async function GET(
@@ -115,9 +115,7 @@ export async function GET(
 
   let q = db
     .from("messages")
-    .select(
-      `id, conversation_id, sender_id, content, attachments, reply_to_id, expires_at, edited_at, deleted_at, created_at, ${SENDER}`
-    )
+    .select(MESSAGE_COLUMNS)
     .eq("conversation_id", id)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -182,7 +180,8 @@ export async function GET(
       mapMessage(
         m,
         reactionsByMsg.get(m.id) ?? [],
-        m.reply_to_id ? replyById.get(m.reply_to_id) ?? null : null
+        m.reply_to_id ? replyById.get(m.reply_to_id) ?? null : null,
+        me.id
       )
     )
     .reverse();
@@ -246,6 +245,10 @@ export async function POST(
   // purge-on-read above and the pg_cron backstop.
   const hasVoice = attachments.some((a) => a.type === "voice");
   const expiresAt = hasVoice ? new Date(Date.now() + VOICE_TTL_MS).toISOString() : null;
+  // Listen-once (V2): sender opts in per message, at send time. Meaningless
+  // without a voice attachment, so silently ignored on a text-only send
+  // rather than erroring over a client bug that can't affect anything.
+  const listenOnce = hasVoice && body.listenOnce === true;
 
   const { data: inserted, error } = await db
     .from("messages")
@@ -256,10 +259,9 @@ export async function POST(
       attachments,
       reply_to_id: replyToId,
       expires_at: expiresAt,
+      listen_once: listenOnce,
     })
-    .select(
-      `id, conversation_id, sender_id, content, attachments, reply_to_id, expires_at, edited_at, deleted_at, created_at, ${SENDER}`
-    )
+    .select(MESSAGE_COLUMNS)
     .single();
   if (error || !inserted) return fail(error?.message || "Failed to send", 500);
 
@@ -269,7 +271,11 @@ export async function POST(
     .update({ last_message_id: inserted.id, last_message_at: inserted.created_at })
     .eq("id", id);
 
-  const mapped = mapMessage(inserted, [], reply);
-  const signedAttachments = await signAttachments(createAdminClient(), mapped.attachments);
+  const mapped = mapMessage(inserted, [], reply, me.id);
+  const signedAttachments = await signAttachments(
+    createAdminClient(),
+    mapped.attachments,
+    mapped.listenOnce
+  );
   return ok({ ...mapped, attachments: signedAttachments }, "Message sent");
 }

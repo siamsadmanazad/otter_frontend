@@ -1,6 +1,21 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isBlockedPair } from "@/lib/api/blocks";
 
+/** True if `userId` is a participant of `conversationId`. */
+export async function isParticipant(
+  db: SupabaseClient,
+  conversationId: string,
+  userId: string
+): Promise<boolean> {
+  const { data } = await db
+    .from("conversation_participants")
+    .select("user_id")
+    .eq("conversation_id", conversationId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return !!data;
+}
+
 /** For a DIRECT conversation, the other participant's id (null for GROUP or if not found). */
 export async function getDirectPeerId(
   db: SupabaseClient,

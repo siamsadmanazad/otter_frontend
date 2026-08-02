@@ -19,32 +19,41 @@ export interface ChatAttachment {
  * client can never sign a sender's object directly — the API mediates
  * cross-participant reads here, by design. Never persist the returned `url`;
  * it expires, `path` doesn't.
+ *
+ * A listen-once message (`m.listenOnce`) never gets a URL here, played or
+ * not — the whole point is the API is the only thing that can mint one, and
+ * only through the dedicated one-shot voice-url endpoint. Callers must map
+ * `listen_once` onto `listenOnce` before passing messages in.
  */
-export async function signAttachmentsForMessages<T extends { attachments?: ChatAttachment[] | null }>(
-  admin: SupabaseClient,
-  messages: T[]
-): Promise<T[]> {
+export async function signAttachmentsForMessages<
+  T extends { attachments?: ChatAttachment[] | null; listenOnce?: boolean }
+>(admin: SupabaseClient, messages: T[]): Promise<T[]> {
   const allPaths = [
     ...new Set(
-      messages.flatMap((m) => (m.attachments ?? []).filter((a) => a?.path).map((a) => a.path as string))
+      messages
+        .filter((m) => !m.listenOnce)
+        .flatMap((m) => (m.attachments ?? []).filter((a) => a?.path).map((a) => a.path as string))
     ),
   ];
-  if (!allPaths.length) return messages;
-
-  const { data } = await admin.storage.from(CHAT_ATTACHMENTS_BUCKET).createSignedUrls(allPaths, SIGNED_URL_TTL_SECONDS);
+  const { data } = allPaths.length
+    ? await admin.storage.from(CHAT_ATTACHMENTS_BUCKET).createSignedUrls(allPaths, SIGNED_URL_TTL_SECONDS)
+    : { data: [] as { path: string; signedUrl: string }[] };
   const urlByPath = new Map((data ?? []).map((d) => [d.path, d.signedUrl]));
   return messages.map((m) => ({
     ...m,
-    attachments: (m.attachments ?? []).map((a) => (a?.path ? { ...a, url: urlByPath.get(a.path) ?? null } : a)),
+    attachments: (m.attachments ?? []).map((a) =>
+      a?.path ? { ...a, url: m.listenOnce ? null : urlByPath.get(a.path) ?? null } : a
+    ),
   }));
 }
 
 /** Same as [signAttachmentsForMessages] for a single message's attachment list. */
 export async function signAttachments(
   admin: SupabaseClient,
-  attachments: ChatAttachment[] | null | undefined
+  attachments: ChatAttachment[] | null | undefined,
+  listenOnce = false
 ): Promise<ChatAttachment[]> {
-  const [signed] = await signAttachmentsForMessages(admin, [{ attachments }]);
+  const [signed] = await signAttachmentsForMessages(admin, [{ attachments, listenOnce }]);
   return signed.attachments ?? [];
 }
 
@@ -52,12 +61,19 @@ export const EXPIRED_VOICE_TEXT = "[voice message expired]";
 
 /**
  * Lazy purge (the primary TTL mechanism — see the pg_cron migration for the
- * DB-only backstop): among raw `messages` rows already past `expires_at`,
- * delete the voice attachment's storage blob and strip content/attachments.
+ * DB-only backstop): among raw `messages` rows, sweep any that are either
+ * past `expires_at` OR a listen-once voice note that's already been played
+ * (`listen_once && voice_played_at`, set atomically by the voice-url consume
+ * endpoint — see `app/api/chat/conversations/[id]/messages/[messageId]/
+ * voice-url/route.ts`). Both share the same fate: delete the voice
+ * attachment's storage blob and strip content/attachments — reusing this one
+ * path rather than a parallel scrub for listen-once, per the V2 design.
  * Requires the ADMIN client for both the storage delete and the messages
  * UPDATE — RLS only lets a message's own sender update it, but any
  * participant reading the thread should trigger this purge. Mutates [rows]
- * in place so the caller can map them without a second round trip.
+ * in place so the caller can map them without a second round trip. Callers
+ * must select `listen_once` and `voice_played_at` alongside `expires_at` for
+ * this to see listen-once rows at all.
  */
 export async function purgeExpiredVoiceRows(
   admin: SupabaseClient,
@@ -66,9 +82,9 @@ export async function purgeExpiredVoiceRows(
   const now = Date.now();
   const expired = rows.filter(
     (r) =>
-      r.expires_at &&
-      new Date(r.expires_at).getTime() < now &&
-      r.content !== EXPIRED_VOICE_TEXT
+      r.content !== EXPIRED_VOICE_TEXT &&
+      ((r.expires_at && new Date(r.expires_at).getTime() < now) ||
+        (r.listen_once && r.voice_played_at))
   );
   if (!expired.length) return;
 
