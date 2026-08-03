@@ -9,7 +9,12 @@ import {
   signAttachmentsForMessages,
   purgeExpiredVoiceRows,
 } from "@/lib/api/chat-attachments";
-import { isBlockedInConversation, isParticipant } from "@/lib/api/chat-guards";
+import {
+  isBlockedInConversation,
+  isParticipant,
+  getDirectPeerId,
+} from "@/lib/api/chat-guards";
+import { captureRouteError } from "@/lib/observability";
 
 const VOICE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -68,6 +73,9 @@ function mapMessage(
     listenOnce: !!m.listen_once,
     voicePlayed: !!m.voice_played_at,
     voicePlayedByMe: !!viewerId && m.voice_played_by === viewerId,
+    // V3 — just a marker of how it was sent; the actual ring is a one-shot
+    // Realtime broadcast fired below, never persisted state of its own.
+    isCall: !!m.is_call,
     reactions,
     deleted: !!m.deleted_at,
     editedAt: m.edited_at,
@@ -86,7 +94,7 @@ function mapMessage(
 const SENDER =
   "sender:profiles!messages_sender_id_fkey(id, username, full_name, profile_image)";
 const MESSAGE_COLUMNS =
-  `id, conversation_id, sender_id, content, attachments, reply_to_id, expires_at, listen_once, voice_played_at, voice_played_by, edited_at, deleted_at, created_at, ${SENDER}` as const;
+  `id, conversation_id, sender_id, content, attachments, reply_to_id, expires_at, listen_once, voice_played_at, voice_played_by, is_call, edited_at, deleted_at, created_at, ${SENDER}` as const;
 
 // GET /api/chat/conversations/[id]/messages?before=&limit=  -> messages, newest first.
 export async function GET(
@@ -249,6 +257,9 @@ export async function POST(
   // without a voice attachment, so silently ignored on a text-only send
   // rather than erroring over a client bug that can't affect anything.
   const listenOnce = hasVoice && body.listenOnce === true;
+  // "Send as a call" (V3): same opt-in-per-message shape as listenOnce, and
+  // independently toggleable (a call can also be listen-once).
+  const isCall = hasVoice && body.isCall === true;
 
   const { data: inserted, error } = await db
     .from("messages")
@@ -260,6 +271,7 @@ export async function POST(
       reply_to_id: replyToId,
       expires_at: expiresAt,
       listen_once: listenOnce,
+      is_call: isCall,
     })
     .select(MESSAGE_COLUMNS)
     .single();
@@ -271,11 +283,45 @@ export async function POST(
     .update({ last_message_id: inserted.id, last_message_at: inserted.created_at })
     .eq("id", id);
 
+  const admin = createAdminClient();
   const mapped = mapMessage(inserted, [], reply, me.id);
-  const signedAttachments = await signAttachments(
-    createAdminClient(),
-    mapped.attachments,
-    mapped.listenOnce
-  );
+
+  // V3 — the ring itself is a one-shot Realtime Broadcast to the recipient's
+  // personal channel, never persisted: whichever of their devices happen to
+  // have the app open right now (see otter_flutter's global `calls:{uid}`
+  // listener) shows the incoming-call UI; if nobody's listening, this is a
+  // no-op and the message just sits there as a normal voice note — that IS
+  // the fallback, there's no separate state to time out or clean up.
+  // DIRECT only (group "calls" are out of scope for v1); best-effort, must
+  // never fail the send itself.
+  if (isCall) {
+    try {
+      const peerId = await getDirectPeerId(db, id, me.id);
+      if (peerId) {
+        const { data: peerRow } = await admin
+          .from("conversation_participants")
+          .select("muted")
+          .eq("conversation_id", id)
+          .eq("user_id", peerId)
+          .maybeSingle();
+        if (!peerRow?.muted) {
+          await admin.channel(`calls:${peerId}`).httpSend("incoming_call", {
+            conversationId: id,
+            messageId: inserted.id,
+            callerId: me.id,
+            callerName: mapped.sender?.fullName ?? mapped.sender?.username ?? "Someone",
+            callerImage: mapped.sender?.profileImage ?? null,
+            durationSeconds: attachments[0]?.duration ?? null,
+          });
+        }
+      }
+    } catch (e) {
+      captureRouteError(e instanceof Error ? e.message : "call broadcast failed", {
+        conversationId: id,
+      });
+    }
+  }
+
+  const signedAttachments = await signAttachments(admin, mapped.attachments, mapped.listenOnce);
   return ok({ ...mapped, attachments: signedAttachments }, "Message sent");
 }
