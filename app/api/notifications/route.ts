@@ -3,13 +3,25 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
 
-function mapNotification(n: Record<string, any> | null) {
+// COMMENT_REPLY/COMMENT_LIKE carry a *comment* id in target_id, which isn't
+// itself a navigable destination — the post it belongs to is. parentPostId
+// resolves that in one batched query (docs/navigation_and_feel.md §N.3.1),
+// looked up by an indexed PK, not per-row.
+const COMMENT_TARGET_TYPES = ["COMMENT_REPLY", "COMMENT_LIKE"];
+
+function mapNotification(
+  n: Record<string, any> | null,
+  parentPostByCommentId?: Map<string, string>
+) {
   if (!n) return null;
   return {
     id: n.id,
     type: n.type,
     targetType: n.target_type,
     targetId: n.target_id,
+    parentPostId: COMMENT_TARGET_TYPES.includes(n.type)
+      ? parentPostByCommentId?.get(n.target_id)
+      : undefined,
     message: n.message,
     read: n.read,
     createdAt: n.created_at,
@@ -61,7 +73,35 @@ export async function GET(request: NextRequest): Promise<Response> {
     .order("created_at", { ascending: false })
     .range(from, to);
   if (error) return fail(error.message, 500);
-  return ok((data ?? []).map(mapNotification), "Notifications fetched");
+
+  const commentIds = [
+    ...new Set(
+      (data ?? [])
+        .filter((n) => COMMENT_TARGET_TYPES.includes(n.type))
+        .map((n) => n.target_id)
+        .filter(Boolean)
+    ),
+  ];
+  let parentPostByCommentId: Map<string, string> | undefined;
+  if (commentIds.length > 0) {
+    const { data: comments, error: commentsError } = await db
+      .from("comments")
+      .select("id, post_id")
+      .in("id", commentIds);
+    if (commentsError) {
+      // Degrade gracefully — the notification itself is still valid, it
+      // just won't resolve to a destination this time (§N2's resolver
+      // treats a missing parentPostId as "no destination", not a crash).
+      console.error("GET /api/notifications comment join error:", commentsError.message);
+    } else {
+      parentPostByCommentId = new Map(comments.map((c) => [c.id, c.post_id]));
+    }
+  }
+
+  return ok(
+    (data ?? []).map((n) => mapNotification(n, parentPostByCommentId)),
+    "Notifications fetched"
+  );
 }
 
 // DELETE /api/notifications?id=   -> remove one of the caller's own notifications
