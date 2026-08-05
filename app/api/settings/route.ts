@@ -42,6 +42,16 @@ const patchSchema = z.object({
     })
     .partial()
     .optional(),
+  // Travel-identity fields from the richer profile form
+  // (tribe_join_and_profile_depth.md §D.3) — stored here rather than as new
+  // `profiles` columns, since nothing queries them server-side.
+  profile: z
+    .object({
+      travelStyle: z.enum(["", "relaxed", "adventure", "mixed"]),
+      budget: z.enum(["", "budget", "mid", "luxury"]),
+    })
+    .partial()
+    .optional(),
 });
 
 // GET /api/settings -> the caller's preferences, merged over defaults.

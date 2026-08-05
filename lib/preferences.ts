@@ -30,8 +30,21 @@ export interface BusinessPrefs {
 export interface OnboardingPrefs {
   // Gate for the first-run onboarding flow; flips true once finished.
   completed: boolean;
-  // Travel interests picked during onboarding (lowercase tokens).
+  // Travel interests picked during onboarding (lowercase tokens). Editable
+  // afterwards via the profile form (tribe_join_and_profile_depth.md D3c) —
+  // this is the one live copy, not duplicated under `profile` below.
   interests: string[];
+}
+
+// Travel-identity fields collected in the richer profile form
+// (tribe_join_and_profile_depth.md §D.3). Storage decision locked 2026-08-05:
+// a `profile` namespace here rather than new `profiles` columns, since none of
+// these fields are ever queried server-side — companions matching reads them
+// back client-side the same way onboarding's `interests` already works.
+// Empty string = not set (mirrors BusinessPrefs' convention below).
+export interface ProfilePrefs {
+  travelStyle: "" | "relaxed" | "adventure" | "mixed";
+  budget: "" | "budget" | "mid" | "luxury";
 }
 
 export interface Preferences {
@@ -39,6 +52,7 @@ export interface Preferences {
   privacy: PrivacyPrefs;
   business: BusinessPrefs;
   onboarding: OnboardingPrefs;
+  profile: ProfilePrefs;
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -66,6 +80,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
     completed: false,
     interests: [],
   },
+  profile: {
+    travelStyle: "",
+    budget: "",
+  },
 };
 
 /** Merge a stored (possibly partial / `{}`) blob over the defaults. */
@@ -76,6 +94,7 @@ export function withDefaults(stored: any): Preferences {
     privacy: { ...DEFAULT_PREFERENCES.privacy, ...(s.privacy ?? {}) },
     business: { ...DEFAULT_PREFERENCES.business, ...(s.business ?? {}) },
     onboarding: { ...DEFAULT_PREFERENCES.onboarding, ...(s.onboarding ?? {}) },
+    profile: { ...DEFAULT_PREFERENCES.profile, ...(s.profile ?? {}) },
   };
 }
 
@@ -87,5 +106,6 @@ export function mergePreferences(current: Preferences, patch: any): Preferences 
     privacy: { ...current.privacy, ...(p.privacy ?? {}) },
     business: { ...current.business, ...(p.business ?? {}) },
     onboarding: { ...current.onboarding, ...(p.onboarding ?? {}) },
+    profile: { ...current.profile, ...(p.profile ?? {}) },
   };
 }
