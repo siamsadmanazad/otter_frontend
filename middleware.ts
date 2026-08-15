@@ -39,6 +39,18 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Run on everything except static assets / images (keeps the session cookie fresh app-wide).
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
+  // Run on page navigations only — static assets, images, AND /api/* are excluded.
+  //
+  // /api/* is excluded deliberately (DM speed program, Step A2). This middleware's
+  // job is refreshing the *browser's* session cookie for page navigations; every
+  // API route already resolves its own caller via getServerUser(). Worse, for the
+  // Flutter client the check was pure dead weight: mobile authenticates with an
+  // `Authorization: Bearer` header and sends no Supabase cookies, so this
+  // cookie-based getUser() could never authenticate it — it only ever added a
+  // network round trip to Supabase Auth in front of every single API call.
+  // Route Handlers can refresh the cookie session themselves (cookies are
+  // writable there), so the web path keeps working without this.
+  matcher: [
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+  ],
 };
