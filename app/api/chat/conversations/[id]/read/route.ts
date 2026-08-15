@@ -23,28 +23,32 @@ export async function POST(
   const { id } = await params;
   const db = await createActorClient(request);
 
-  const { data: member } = await db
-    .from("conversation_participants")
-    .select("user_id")
-    .eq("conversation_id", id)
-    .eq("user_id", me.id)
-    .maybeSingle();
-  timer.mark("member");
-  if (!member) {
+  // Membership check and the inbound-message scan depend only on the
+  // conversation id, not on each other — one round trip instead of two. RLS
+  // (messages_select_participant) scopes the message read independently, so
+  // running it before the membership branch resolves cannot leak anything.
+  const [memberRes, inboundRes] = await Promise.all([
+    db
+      .from("conversation_participants")
+      .select("user_id")
+      .eq("conversation_id", id)
+      .eq("user_id", me.id)
+      .maybeSingle(),
+    // Most recent inbound messages (bounded) that the caller hasn't read yet.
+    db
+      .from("messages")
+      .select("id")
+      .eq("conversation_id", id)
+      .neq("sender_id", me.id)
+      .order("created_at", { ascending: false })
+      .limit(200),
+  ]);
+  timer.mark("member+inbound");
+  if (!memberRes.data) {
     timer.finish({ result: "403" });
     return fail("Not a participant of this conversation", 403);
   }
-
-  // Most recent inbound messages (bounded) that the caller hasn't read yet.
-  const { data: inbound } = await db
-    .from("messages")
-    .select("id")
-    .eq("conversation_id", id)
-    .neq("sender_id", me.id)
-    .order("created_at", { ascending: false })
-    .limit(200);
-  timer.mark("inbound");
-  const inboundIds = (inbound ?? []).map((m: any) => m.id);
+  const inboundIds = (inboundRes.data ?? []).map((m: any) => m.id);
   if (inboundIds.length === 0) {
     timer.finish({ marked: 0 });
     return ok({ marked: 0 }, "Nothing to mark");

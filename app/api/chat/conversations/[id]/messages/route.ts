@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, after } from "next/server";
 import { createActorClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
@@ -8,6 +8,8 @@ import {
   signAttachments,
   signAttachmentsForMessages,
   purgeExpiredVoiceRows,
+  maskExpiredVoiceRows,
+  persistExpiredVoicePurge,
 } from "@/lib/api/chat-attachments";
 import {
   isBlockedInConversation,
@@ -111,26 +113,29 @@ export async function GET(
   }
   const { id } = await params;
   const db = await createActorClient(request);
-  if (!(await isParticipant(db, id, me.id))) {
-    timer.mark("isParticipant");
-    timer.finish({ result: "403" });
-    return fail("Not a participant of this conversation", 403);
-  }
-  timer.mark("isParticipant");
 
   const sp = request.nextUrl.searchParams;
   const before = sp.get("before");
   const limit = Math.min(50, Math.max(1, parseInt(sp.get("limit") || "30", 10)));
 
-  // "Clear chat": hide everything at/below the caller's cleared_at cursor.
+  // One query answers BOTH "is the caller a participant" and "what's their
+  // cleared_at cursor" — same table, same two filters. These were two serial
+  // round trips (isParticipant() then the cleared_at read) for no reason; the
+  // row's existence IS the participation check (RLS enforces it regardless, so
+  // this only buys a clean 403 instead of an empty result).
   const { data: meRow } = await db
     .from("conversation_participants")
-    .select("cleared_at")
+    .select("user_id, cleared_at")
     .eq("conversation_id", id)
     .eq("user_id", me.id)
     .maybeSingle();
-  const clearedAt: string | null = meRow?.cleared_at ?? null;
-  timer.mark("clearedAt");
+  timer.mark("participantRow");
+  if (!meRow) {
+    timer.finish({ result: "403" });
+    return fail("Not a participant of this conversation", 403);
+  }
+  // "Clear chat": hide everything at/below the caller's cleared_at cursor.
+  const clearedAt: string | null = meRow.cleared_at ?? null;
 
   let q = db
     .from("messages")
@@ -152,53 +157,60 @@ export async function GET(
   // Lazy TTL purge (the primary mechanism — see the pg_cron migration for the
   // DB-only backstop): strip any voice attachment past its expires_at right
   // here, before mapping, so the caller never sees stale content/attachments.
-  await purgeExpiredVoiceRows(createAdminClient(), rows);
-  timer.mark("purgeExpiredVoice");
-
-  // Enrich with tapback reactions (aggregated) + a quote preview for replies.
-  const ids = rows.map((m: any) => m.id);
-  const reactionsByMsg = new Map<string, ReactionAgg[]>();
-  if (ids.length) {
-    const { data: rx } = await db
-      .from("message_reactions")
-      .select("message_id, emoji, user_id")
-      .in("message_id", ids);
-    timer.mark("reactions");
-    const bucket = new Map<string, Map<string, { count: number; mine: boolean }>>();
-    for (const r of rx ?? []) {
-      const byEmoji = bucket.get(r.message_id) ?? new Map();
-      const cur = byEmoji.get(r.emoji) ?? { count: 0, mine: false };
-      cur.count += 1;
-      if (r.user_id === me.id) cur.mine = true;
-      byEmoji.set(r.emoji, cur);
-      bucket.set(r.message_id, byEmoji);
-    }
-    for (const [mid, byEmoji] of bucket) {
-      reactionsByMsg.set(
-        mid,
-        [...byEmoji.entries()].map(([emoji, v]) => ({ emoji, ...v }))
-      );
-    }
+  // Masking is synchronous because the response depends on it; the storage
+  // delete + DB update are bookkeeping and run after the response is sent.
+  const purge = maskExpiredVoiceRows(rows);
+  if (purge.ids.length) {
+    after(() =>
+      persistExpiredVoicePurge(createAdminClient(), purge).catch((e) =>
+        console.error("[chat] deferred voice purge failed:", e)
+      )
+    );
   }
 
+  // Enrich with tapback reactions (aggregated) + a quote preview for replies.
+  // Both depend on `rows` but not on each other, so they share one round trip
+  // instead of stacking two.
+  const ids = rows.map((m: any) => m.id);
   const replyIds = [
     ...new Set(rows.map((m: any) => m.reply_to_id).filter(Boolean)),
   ] as string[];
-  const replyById = new Map<string, ReplyPreview>();
-  if (replyIds.length) {
-    const { data: reps } = await db
-      .from("messages")
-      .select("id, sender_id, content, deleted_at")
-      .in("id", replyIds);
-    timer.mark("replyPreviews");
-    for (const r of reps ?? [])
-      replyById.set(r.id, {
-        id: r.id,
-        senderId: r.sender_id,
-        content: r.deleted_at ? null : r.content,
-        deleted: !!r.deleted_at,
-      });
+
+  const [rxRes, repsRes] = await Promise.all([
+    ids.length
+      ? db.from("message_reactions").select("message_id, emoji, user_id").in("message_id", ids)
+      : Promise.resolve({ data: [] as any[] }),
+    replyIds.length
+      ? db.from("messages").select("id, sender_id, content, deleted_at").in("id", replyIds)
+      : Promise.resolve({ data: [] as any[] }),
+  ]);
+  timer.mark("enrich");
+
+  const reactionsByMsg = new Map<string, ReactionAgg[]>();
+  const bucket = new Map<string, Map<string, { count: number; mine: boolean }>>();
+  for (const r of rxRes.data ?? []) {
+    const byEmoji = bucket.get(r.message_id) ?? new Map();
+    const cur = byEmoji.get(r.emoji) ?? { count: 0, mine: false };
+    cur.count += 1;
+    if (r.user_id === me.id) cur.mine = true;
+    byEmoji.set(r.emoji, cur);
+    bucket.set(r.message_id, byEmoji);
   }
+  for (const [mid, byEmoji] of bucket) {
+    reactionsByMsg.set(
+      mid,
+      [...byEmoji.entries()].map(([emoji, v]) => ({ emoji, ...v }))
+    );
+  }
+
+  const replyById = new Map<string, ReplyPreview>();
+  for (const r of repsRes.data ?? [])
+    replyById.set(r.id, {
+      id: r.id,
+      senderId: r.sender_id,
+      content: r.deleted_at ? null : r.content,
+      deleted: !!r.deleted_at,
+    });
 
   // Return chronological (oldest -> newest) for easy append rendering.
   const messages = rows

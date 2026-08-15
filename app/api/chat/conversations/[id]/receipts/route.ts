@@ -24,12 +24,26 @@ export async function GET(
   const { id } = await params;
   const db = await createActorClient(request);
 
-  // The other participant (1:1) + their delivered cursor.
-  const { data: parts, error: pErr } = await db
-    .from("conversation_participants")
-    .select("user_id, last_delivered_at")
-    .eq("conversation_id", id);
-  timer.mark("participants");
+  // The participants (for the peer + their delivered cursor) and my own recent
+  // messages (for the read cursor) depend only on the conversation id, not on
+  // each other — one round trip instead of two. RLS scopes both to
+  // conversations the caller participates in, so fetching my messages
+  // concurrently with the membership check leaks nothing on the 403 path.
+  const [partsRes, mineRes] = await Promise.all([
+    db
+      .from("conversation_participants")
+      .select("user_id, last_delivered_at")
+      .eq("conversation_id", id),
+    db
+      .from("messages")
+      .select("id, created_at")
+      .eq("conversation_id", id)
+      .eq("sender_id", me.id)
+      .order("created_at", { ascending: false })
+      .limit(200),
+  ]);
+  timer.mark("participants+myMessages");
+  const { data: parts, error: pErr } = partsRes;
   if (pErr) {
     timer.finish({ result: "500" });
     return fail(pErr.message, 500);
@@ -45,14 +59,7 @@ export async function GET(
   }
 
   // Newest of my messages that the peer has read → peerReadAt.
-  const { data: mine } = await db
-    .from("messages")
-    .select("id, created_at")
-    .eq("conversation_id", id)
-    .eq("sender_id", me.id)
-    .order("created_at", { ascending: false })
-    .limit(200);
-  timer.mark("myMessages");
+  const mine = mineRes.data;
   const mineIds = (mine ?? []).map((m: any) => m.id);
   let peerReadAt: string | null = null;
   if (mineIds.length) {

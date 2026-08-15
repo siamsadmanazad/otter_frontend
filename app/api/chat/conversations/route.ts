@@ -1,11 +1,14 @@
-import { NextRequest } from "next/server";
+import { NextRequest, after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createActorClient } from "@/lib/supabase/server";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
 import { isBlockedPair, getBlockedPairIds } from "@/lib/api/blocks";
 import { withDefaults } from "@/lib/preferences";
-import { purgeExpiredVoiceRows } from "@/lib/api/chat-attachments";
+import {
+  maskExpiredVoiceRows,
+  persistExpiredVoicePurge,
+} from "@/lib/api/chat-attachments";
 import { createStageTimer } from "@/lib/api/timing";
 
 type Profile = {
@@ -40,7 +43,12 @@ export async function GET(request: NextRequest): Promise<Response> {
   }
   const db = await createActorClient(request);
 
+  // Depends only on me.id, so it rides alongside round A instead of tailing the
+  // whole waterfall (it used to be the LAST await in the route).
+  const blockedIdsPromise = getBlockedPairIds(db, me.id);
+
   const filter = request.nextUrl.searchParams.get("filter") ?? "inbox";
+  // Round A — nothing else can start until we know which conversations are mine.
   const { data: myRows } = await db
     .from("conversation_participants")
     .select("conversation_id, accepted, archived, muted, pinned_at")
@@ -54,6 +62,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     })
     .map((r: any) => r.conversation_id);
   if (convIds.length === 0) {
+    await blockedIdsPromise; // settle it; nothing below runs
     timer.finish({ convIds: 0 });
     return ok([], "No conversations");
   }
@@ -65,27 +74,43 @@ export async function GET(request: NextRequest): Promise<Response> {
     if (r.pinned_at) pinnedAtByConv.set(r.conversation_id, r.pinned_at);
   }
 
-  const { data: convs, error } = await db
-    .from("conversations")
-    .select(
-      "id, serial, type, name, cover_image, last_message_id, last_message_at, created_by, created_at"
-    )
-    .in("id", convIds)
-    .order("last_message_at", { ascending: false, nullsFirst: false });
-  timer.mark("conversations");
+  // Round B — the whole rest of the read, in ONE hop.
+  //
+  // The last message and its read receipts come back EMBEDDED on each
+  // conversation via the conversations_last_message_fk / message_reads FKs,
+  // which folds what used to be three more serial round trips (messages, then
+  // message_reads, then participants) into a single parallel pair. Measured
+  // against the previous sequential shape on real data: 1317ms -> 456ms, with
+  // byte-identical output (dm_redesign.md §7 A3). RLS still applies to embedded
+  // resources, so `message_reads_select_self` keeps scoping receipts to
+  // conversations the caller participates in — the peer's read is visible (that
+  // policy's OR-branch), which is what powers the Seen state below.
+  const [convsRes, partsRes] = await Promise.all([
+    db
+      .from("conversations")
+      .select(
+        "id, serial, type, name, cover_image, last_message_id, last_message_at, created_by, created_at, " +
+          "last_message:messages!conversations_last_message_fk(" +
+          "id, content, sender_id, created_at, deleted_at, attachments, expires_at, listen_once, voice_played_at, " +
+          "message_reads(user_id))"
+      )
+      .in("id", convIds)
+      .order("last_message_at", { ascending: false, nullsFirst: false }),
+    // All participants (with profiles + delivered cursor) for these conversations.
+    db
+      .from("conversation_participants")
+      .select(
+        "conversation_id, user_id, last_delivered_at, profile:profiles!conversation_participants_user_id_fkey(id, username, full_name, profile_image)"
+      )
+      .in("conversation_id", convIds),
+  ]);
+  timer.mark("roundB");
+  const { data: convs, error } = convsRes;
   if (error) {
     timer.finish({ result: "500" });
     return fail(error.message, 500);
   }
-
-  // All participants (with profiles + delivered cursor) for these conversations.
-  const { data: parts } = await db
-    .from("conversation_participants")
-    .select(
-      "conversation_id, user_id, last_delivered_at, profile:profiles!conversation_participants_user_id_fkey(id, username, full_name, profile_image)"
-    )
-    .in("conversation_id", convIds);
-  timer.mark("participants");
+  const parts = partsRes.data;
   const byConv = new Map<string, any[]>();
   const deliveredAtByConvUser = new Map<string, Map<string, string>>();
   for (const p of parts ?? []) {
@@ -99,44 +124,48 @@ export async function GET(request: NextRequest): Promise<Response> {
     }
   }
 
-  // Last messages + read state (mine, for `unread`; everyone's, for my own status).
-  const lastIds = (convs ?? [])
-    .map((c: any) => c.last_message_id)
-    .filter(Boolean);
+  // Last messages + read state (mine, for `unread`; everyone's, for my own
+  // status) — all of it already came back on the round-B embed above.
   const lastMsgById = new Map<string, any>();
   const readSet = new Set<string>(); // messages I've read
   const readersByMsg = new Map<string, Set<string>>(); // message -> who read it
-  if (lastIds.length) {
-    const { data: msgs } = await db
-      .from("messages")
-      .select(
-        "id, content, sender_id, created_at, deleted_at, attachments, expires_at, listen_once, voice_played_at"
-      )
-      .in("id", lastIds);
-    timer.mark("lastMessages");
-    // So an expired voice note's inbox preview ("🎤 Voice message") flips to
-    // the expired placeholder without waiting for the thread to be reopened.
-    // NOTE: this is an admin-client WRITE sitting on a GET's critical path —
-    // flagged in dm_redesign.md Step A3 as a target for removal.
-    await purgeExpiredVoiceRows(createAdminClient(), msgs ?? []);
-    timer.mark("purgeExpiredVoice");
-    for (const m of msgs ?? []) lastMsgById.set(m.id, m);
-    const { data: reads } = await db
-      .from("message_reads")
-      .select("message_id, user_id")
-      .in("message_id", lastIds);
-    timer.mark("messageReads");
-    for (const r of reads ?? []) {
-      if (r.user_id === me.id) readSet.add(r.message_id);
-      const set = readersByMsg.get(r.message_id) ?? new Set();
+  const lastMsgs: any[] = [];
+  for (const c of convs ?? []) {
+    // to-one FK embed; PostgREST hands back an object (or null when the row is
+    // gone / not visible), but tolerate an array shape so a PostgREST version
+    // change degrades to "no preview" rather than a crash.
+    const raw = (c as any).last_message;
+    const lm = Array.isArray(raw) ? raw[0] ?? null : raw;
+    if (!lm) continue;
+    const { message_reads, ...msg } = lm;
+    lastMsgs.push(msg);
+    lastMsgById.set(msg.id, msg);
+    for (const r of (message_reads ?? []) as { user_id: string }[]) {
+      if (r.user_id === me.id) readSet.add(msg.id);
+      const set = readersByMsg.get(msg.id) ?? new Set<string>();
       set.add(r.user_id);
-      readersByMsg.set(r.message_id, set);
+      readersByMsg.set(msg.id, set);
     }
+  }
+
+  // So an expired voice note's inbox preview flips to the expired placeholder
+  // without waiting for the thread to be reopened. Masking is synchronous (the
+  // response needs it); the storage delete + DB update are bookkeeping and now
+  // run AFTER the response is sent — this is a GET, and it used to block on an
+  // admin-client write before it could answer.
+  const purge = maskExpiredVoiceRows(lastMsgs);
+  if (purge.ids.length) {
+    after(() =>
+      persistExpiredVoicePurge(createAdminClient(), purge).catch((e) =>
+        console.error("[chat] deferred voice purge failed:", e)
+      )
+    );
   }
 
   // Defense-in-depth signal for the client (banner + disable composer);
   // actual enforcement is server-side in the messages/reactions routes.
-  const blockedIds = new Set(await getBlockedPairIds(db, me.id));
+  // Already in flight since before round A — this just collects it.
+  const blockedIds = new Set(await blockedIdsPromise);
   timer.mark("blockedPairs");
 
   // A DIRECT conversation with no resolvable peer (the other participant row
