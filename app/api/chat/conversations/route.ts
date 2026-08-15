@@ -6,6 +6,7 @@ import { ok, fail } from "@/lib/api/http";
 import { isBlockedPair, getBlockedPairIds } from "@/lib/api/blocks";
 import { withDefaults } from "@/lib/preferences";
 import { purgeExpiredVoiceRows } from "@/lib/api/chat-attachments";
+import { createStageTimer } from "@/lib/api/timing";
 
 type Profile = {
   id: string;
@@ -30,8 +31,13 @@ function mapUser(p: Profile | null) {
 // Actor client: RLS (cp_select_participant / conversations_select_participant) scopes
 // every read to the caller's own conversations.
 export async function GET(request: NextRequest): Promise<Response> {
+  const timer = createStageTimer("conversations");
   const me = await getServerUser(request);
-  if (!me) return fail("Unauthorized", 401);
+  timer.mark("auth");
+  if (!me) {
+    timer.finish({ result: "401" });
+    return fail("Unauthorized", 401);
+  }
   const db = await createActorClient(request);
 
   const filter = request.nextUrl.searchParams.get("filter") ?? "inbox";
@@ -39,6 +45,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     .from("conversation_participants")
     .select("conversation_id, accepted, archived, muted, pinned_at")
     .eq("user_id", me.id);
+  timer.mark("myRows");
   const convIds = (myRows ?? [])
     .filter((r: any) => {
       if (filter === "archived") return r.archived;
@@ -46,7 +53,10 @@ export async function GET(request: NextRequest): Promise<Response> {
       return r.accepted && !r.archived; // inbox
     })
     .map((r: any) => r.conversation_id);
-  if (convIds.length === 0) return ok([], "No conversations");
+  if (convIds.length === 0) {
+    timer.finish({ convIds: 0 });
+    return ok([], "No conversations");
+  }
 
   const mutedByConv = new Map<string, boolean>();
   const pinnedAtByConv = new Map<string, string>();
@@ -62,7 +72,11 @@ export async function GET(request: NextRequest): Promise<Response> {
     )
     .in("id", convIds)
     .order("last_message_at", { ascending: false, nullsFirst: false });
-  if (error) return fail(error.message, 500);
+  timer.mark("conversations");
+  if (error) {
+    timer.finish({ result: "500" });
+    return fail(error.message, 500);
+  }
 
   // All participants (with profiles + delivered cursor) for these conversations.
   const { data: parts } = await db
@@ -71,6 +85,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       "conversation_id, user_id, last_delivered_at, profile:profiles!conversation_participants_user_id_fkey(id, username, full_name, profile_image)"
     )
     .in("conversation_id", convIds);
+  timer.mark("participants");
   const byConv = new Map<string, any[]>();
   const deliveredAtByConvUser = new Map<string, Map<string, string>>();
   for (const p of parts ?? []) {
@@ -98,14 +113,19 @@ export async function GET(request: NextRequest): Promise<Response> {
         "id, content, sender_id, created_at, deleted_at, attachments, expires_at, listen_once, voice_played_at"
       )
       .in("id", lastIds);
+    timer.mark("lastMessages");
     // So an expired voice note's inbox preview ("🎤 Voice message") flips to
     // the expired placeholder without waiting for the thread to be reopened.
+    // NOTE: this is an admin-client WRITE sitting on a GET's critical path —
+    // flagged in dm_redesign.md Step A3 as a target for removal.
     await purgeExpiredVoiceRows(createAdminClient(), msgs ?? []);
+    timer.mark("purgeExpiredVoice");
     for (const m of msgs ?? []) lastMsgById.set(m.id, m);
     const { data: reads } = await db
       .from("message_reads")
       .select("message_id, user_id")
       .in("message_id", lastIds);
+    timer.mark("messageReads");
     for (const r of reads ?? []) {
       if (r.user_id === me.id) readSet.add(r.message_id);
       const set = readersByMsg.get(r.message_id) ?? new Set();
@@ -117,6 +137,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   // Defense-in-depth signal for the client (banner + disable composer);
   // actual enforcement is server-side in the messages/reactions routes.
   const blockedIds = new Set(await getBlockedPairIds(db, me.id));
+  timer.mark("blockedPairs");
 
   // A DIRECT conversation with no resolvable peer (the other participant row
   // is missing, or its profile failed to join) is dead data — surfacing it
@@ -190,6 +211,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     return bp - ap;
   });
 
+  timer.finish({ count: result.length });
   return ok(result, "Conversations fetched");
 }
 

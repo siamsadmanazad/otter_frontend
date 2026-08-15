@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createActorClient } from "@/lib/supabase/server";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
+import { createStageTimer } from "@/lib/api/timing";
 
 // Actor client: RLS (message_reads_insert_self + messages_select_participant) enforces
 // that the caller can only mark their own reads on conversations they belong to.
@@ -12,8 +13,13 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Response> {
+  const timer = createStageTimer("read");
   const me = await getServerUser(request);
-  if (!me) return fail("Unauthorized", 401);
+  timer.mark("auth");
+  if (!me) {
+    timer.finish({ result: "401" });
+    return fail("Unauthorized", 401);
+  }
   const { id } = await params;
   const db = await createActorClient(request);
 
@@ -23,7 +29,11 @@ export async function POST(
     .eq("conversation_id", id)
     .eq("user_id", me.id)
     .maybeSingle();
-  if (!member) return fail("Not a participant of this conversation", 403);
+  timer.mark("member");
+  if (!member) {
+    timer.finish({ result: "403" });
+    return fail("Not a participant of this conversation", 403);
+  }
 
   // Most recent inbound messages (bounded) that the caller hasn't read yet.
   const { data: inbound } = await db
@@ -33,21 +43,34 @@ export async function POST(
     .neq("sender_id", me.id)
     .order("created_at", { ascending: false })
     .limit(200);
+  timer.mark("inbound");
   const inboundIds = (inbound ?? []).map((m: any) => m.id);
-  if (inboundIds.length === 0) return ok({ marked: 0 }, "Nothing to mark");
+  if (inboundIds.length === 0) {
+    timer.finish({ marked: 0 });
+    return ok({ marked: 0 }, "Nothing to mark");
+  }
 
   const { data: already } = await db
     .from("message_reads")
     .select("message_id")
     .eq("user_id", me.id)
     .in("message_id", inboundIds);
+  timer.mark("already");
   const readSet = new Set((already ?? []).map((r: any) => r.message_id));
   const toInsert = inboundIds
     .filter((mid: string) => !readSet.has(mid))
     .map((mid: string) => ({ message_id: mid, user_id: me.id }));
 
-  if (toInsert.length === 0) return ok({ marked: 0 }, "Already read");
+  if (toInsert.length === 0) {
+    timer.finish({ marked: 0 });
+    return ok({ marked: 0 }, "Already read");
+  }
   const { error } = await db.from("message_reads").insert(toInsert);
-  if (error) return fail(error.message, 500);
+  timer.mark("insert");
+  if (error) {
+    timer.finish({ result: "500" });
+    return fail(error.message, 500);
+  }
+  timer.finish({ marked: toInsert.length });
   return ok({ marked: toInsert.length }, "Marked read");
 }

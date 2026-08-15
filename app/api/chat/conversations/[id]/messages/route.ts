@@ -15,6 +15,7 @@ import {
   getDirectPeerId,
 } from "@/lib/api/chat-guards";
 import { captureRouteError } from "@/lib/observability";
+import { createStageTimer } from "@/lib/api/timing";
 
 const VOICE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -101,12 +102,21 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Response> {
+  const timer = createStageTimer("messages");
   const me = await getServerUser(request);
-  if (!me) return fail("Unauthorized", 401);
+  timer.mark("auth");
+  if (!me) {
+    timer.finish({ result: "401" });
+    return fail("Unauthorized", 401);
+  }
   const { id } = await params;
   const db = await createActorClient(request);
-  if (!(await isParticipant(db, id, me.id)))
+  if (!(await isParticipant(db, id, me.id))) {
+    timer.mark("isParticipant");
+    timer.finish({ result: "403" });
     return fail("Not a participant of this conversation", 403);
+  }
+  timer.mark("isParticipant");
 
   const sp = request.nextUrl.searchParams;
   const before = sp.get("before");
@@ -120,6 +130,7 @@ export async function GET(
     .eq("user_id", me.id)
     .maybeSingle();
   const clearedAt: string | null = meRow?.cleared_at ?? null;
+  timer.mark("clearedAt");
 
   let q = db
     .from("messages")
@@ -131,13 +142,18 @@ export async function GET(
   if (clearedAt) q = q.gt("created_at", clearedAt);
 
   const { data, error } = await q;
-  if (error) return fail(error.message, 500);
+  timer.mark("messages");
+  if (error) {
+    timer.finish({ result: "500" });
+    return fail(error.message, 500);
+  }
   const rows = data ?? [];
 
   // Lazy TTL purge (the primary mechanism — see the pg_cron migration for the
   // DB-only backstop): strip any voice attachment past its expires_at right
   // here, before mapping, so the caller never sees stale content/attachments.
   await purgeExpiredVoiceRows(createAdminClient(), rows);
+  timer.mark("purgeExpiredVoice");
 
   // Enrich with tapback reactions (aggregated) + a quote preview for replies.
   const ids = rows.map((m: any) => m.id);
@@ -147,6 +163,7 @@ export async function GET(
       .from("message_reactions")
       .select("message_id, emoji, user_id")
       .in("message_id", ids);
+    timer.mark("reactions");
     const bucket = new Map<string, Map<string, { count: number; mine: boolean }>>();
     for (const r of rx ?? []) {
       const byEmoji = bucket.get(r.message_id) ?? new Map();
@@ -173,6 +190,7 @@ export async function GET(
       .from("messages")
       .select("id, sender_id, content, deleted_at")
       .in("id", replyIds);
+    timer.mark("replyPreviews");
     for (const r of reps ?? [])
       replyById.set(r.id, {
         id: r.id,
@@ -198,6 +216,8 @@ export async function GET(
   // chat-attachments' storage RLS is owner-path-scoped, so a caller reading a
   // conversation peer's attachment could never sign it via their own actor client.
   const signed = await signAttachmentsForMessages(createAdminClient(), messages);
+  timer.mark("signAttachments");
+  timer.finish({ count: signed.length });
   return ok(signed, "Messages fetched");
 }
 

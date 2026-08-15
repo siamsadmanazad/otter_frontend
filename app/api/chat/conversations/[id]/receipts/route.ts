@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createActorClient } from "@/lib/supabase/server";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
+import { createStageTimer } from "@/lib/api/timing";
 
 // GET /api/chat/conversations/[id]/receipts
 //   -> { peerId, peerDeliveredAt, peerReadAt }
@@ -13,8 +14,13 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Response> {
+  const timer = createStageTimer("receipts");
   const me = await getServerUser(request);
-  if (!me) return fail("Unauthorized", 401);
+  timer.mark("auth");
+  if (!me) {
+    timer.finish({ result: "401" });
+    return fail("Unauthorized", 401);
+  }
   const { id } = await params;
   const db = await createActorClient(request);
 
@@ -23,11 +29,20 @@ export async function GET(
     .from("conversation_participants")
     .select("user_id, last_delivered_at")
     .eq("conversation_id", id);
-  if (pErr) return fail(pErr.message, 500);
-  if (!(parts ?? []).some((p: any) => p.user_id === me.id))
+  timer.mark("participants");
+  if (pErr) {
+    timer.finish({ result: "500" });
+    return fail(pErr.message, 500);
+  }
+  if (!(parts ?? []).some((p: any) => p.user_id === me.id)) {
+    timer.finish({ result: "403" });
     return fail("Not a participant of this conversation", 403);
+  }
   const peer = (parts ?? []).find((p: any) => p.user_id !== me.id);
-  if (!peer) return ok({ peerId: null, peerDeliveredAt: null, peerReadAt: null }, "No peer");
+  if (!peer) {
+    timer.finish({ result: "no-peer" });
+    return ok({ peerId: null, peerDeliveredAt: null, peerReadAt: null }, "No peer");
+  }
 
   // Newest of my messages that the peer has read → peerReadAt.
   const { data: mine } = await db
@@ -37,6 +52,7 @@ export async function GET(
     .eq("sender_id", me.id)
     .order("created_at", { ascending: false })
     .limit(200);
+  timer.mark("myMessages");
   const mineIds = (mine ?? []).map((m: any) => m.id);
   let peerReadAt: string | null = null;
   if (mineIds.length) {
@@ -45,6 +61,7 @@ export async function GET(
       .select("message_id")
       .eq("user_id", peer.user_id)
       .in("message_id", mineIds);
+    timer.mark("reads");
     const readSet = new Set((reads ?? []).map((r: any) => r.message_id));
     for (const m of mine ?? []) {
       if (readSet.has(m.id)) {
@@ -54,6 +71,7 @@ export async function GET(
     }
   }
 
+  timer.finish();
   return ok(
     {
       peerId: peer.user_id,
