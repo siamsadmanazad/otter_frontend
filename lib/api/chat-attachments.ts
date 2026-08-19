@@ -9,6 +9,8 @@ export interface ChatAttachment {
   size?: number;
   duration?: number;
   url?: string;
+  /** B7 — display filename, "file"-type attachments only. */
+  name?: string;
   [key: string]: unknown;
 }
 

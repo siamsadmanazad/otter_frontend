@@ -21,8 +21,9 @@ import { createStageTimer } from "@/lib/api/timing";
 
 const VOICE_TTL_MS = 24 * 60 * 60 * 1000;
 
-const ATTACHMENT_TYPES = new Set(["image", "video", "voice"]);
+const ATTACHMENT_TYPES = new Set(["image", "video", "voice", "file"]);
 const MAX_ATTACHMENTS_PER_MESSAGE = 1;
+const MAX_FILE_NAME_LENGTH = 150;
 
 // Whitelist incoming attachment fields and cap the count — never trust the client's
 // shape verbatim (e.g. a stale `url` must never get persisted into the jsonb column).
@@ -44,6 +45,13 @@ function sanitizeAttachments(input: unknown): Record<string, unknown>[] {
       path: a.path,
       size: typeof a.size === "number" ? a.size : undefined,
       duration: typeof a.duration === "number" ? a.duration : undefined,
+      // B7 — the "file" type's display name (upload route already sanitizes
+      // it; re-cap the length here too since this is the actual trust
+      // boundary for what gets persisted).
+      name:
+        a.type === "file" && typeof a.name === "string" && a.name
+          ? a.name.slice(0, MAX_FILE_NAME_LENGTH)
+          : undefined,
     }));
 }
 

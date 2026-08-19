@@ -12,10 +12,30 @@ import { CHAT_ATTACHMENTS_BUCKET } from "@/lib/api/chat-attachments";
 const MAX_IMAGE_MB = 10;
 const MAX_VIDEO_MB = 50;
 const MAX_VOICE_MB = 5;
+const MAX_FILE_MB = 25;
 const MAX_VOICE_SECONDS = 130; // client caps recording at 120s; small buffer
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg", "image/gif", "image/heic"];
 const VIDEO_TYPES = ["video/mp4", "video/webm", "video/ogg", "video/mpeg", "video/quicktime", "video/x-msvideo"];
 const VOICE_TYPES = ["audio/m4a", "audio/x-m4a", "audio/mp4", "audio/aac", "audio/mpeg", "audio/wav"];
+// B7 (dm_redesign.md): a generic "share a document" allowlist — office/PDF/
+// text/archive formats only, never anything executable. No moderation or
+// transcoding runs on these (unlike images), so the allowlist is the entire
+// content gate.
+const FILE_TYPES = [
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "text/plain",
+  "text/csv",
+  "application/json",
+  "application/zip",
+  "application/x-zip-compressed",
+];
+const MAX_FILE_NAME_LENGTH = 150;
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
 // POST /api/chat/attachments (FormData { file, duration? }) -> upload a photo,
@@ -43,9 +63,10 @@ export async function POST(request: NextRequest) {
     const isImage = IMAGE_TYPES.includes(mimeType);
     const isVideo = VIDEO_TYPES.includes(mimeType);
     const isVoice = VOICE_TYPES.includes(mimeType);
-    if (!isImage && !isVideo && !isVoice) return fail("Invalid file type.", 400);
+    const isFile = FILE_TYPES.includes(mimeType);
+    if (!isImage && !isVideo && !isVoice && !isFile) return fail("Invalid file type.", 400);
 
-    const maxMb = isVideo ? MAX_VIDEO_MB : isVoice ? MAX_VOICE_MB : MAX_IMAGE_MB;
+    const maxMb = isVideo ? MAX_VIDEO_MB : isVoice ? MAX_VOICE_MB : isFile ? MAX_FILE_MB : MAX_IMAGE_MB;
     const maxBytes = maxMb * 1024 * 1024;
     if (file.size > maxBytes) {
       return fail(`File size exceeds ${maxMb}MB limit.`, 400);
@@ -61,11 +82,24 @@ export async function POST(request: NextRequest) {
 
     let buffer = Buffer.from(await file.arrayBuffer());
     let contentType = mimeType;
+    // The original filename, sanitized for display — a generic file (unlike
+    // image/video/voice) is meaningless without it, so it rides along in the
+    // response and gets persisted onto the message's attachment JSON.
+    const originalName = (file.name || "file")
+      .replace(/[/\\]/g, "_")
+      .slice(0, MAX_FILE_NAME_LENGTH);
     // audio/mp4 is the canonical MIME for an M4A/AAC container (many mime
     // libraries, including the client's, report m4a files this way) — keep
     // the file extension as .m4a for voice notes rather than the misleading .mp4.
+    // A file's extension comes from its own name (the mime subtype for e.g.
+    // a .docx is an unusable "vnd.openxmlformats-...-document" string), with
+    // a mime-based fallback for a name that arrives without one.
     let ext = isVoice
       ? "m4a"
+      : isFile
+      ? originalName.includes(".")
+        ? originalName.split(".").pop()!.toLowerCase()
+        : mimeType.split("/")[1] || "bin"
       : (mimeType.split("/")[1] || "bin").replace("quicktime", "mov").replace("x-m4a", "m4a");
 
     // Optimize still images to webp (skip gif/heic which sharp may not handle here).
@@ -90,6 +124,8 @@ export async function POST(request: NextRequest) {
     const db = createAdminClient();
     const path = isVoice
       ? `${user.id}/voice/${crypto.randomUUID()}.${ext}`
+      : isFile
+      ? `${user.id}/file/${crypto.randomUUID()}.${ext}`
       : `${user.id}/${crypto.randomUUID()}.${ext}`;
     const { error: upErr } = await db.storage.from(CHAT_ATTACHMENTS_BUCKET).upload(path, buffer, {
       contentType,
@@ -106,9 +142,10 @@ export async function POST(request: NextRequest) {
     return ok(
       {
         path,
-        type: isVideo ? "video" : isVoice ? "voice" : "image",
+        type: isVideo ? "video" : isVoice ? "voice" : isFile ? "file" : "image",
         size: buffer.length,
         duration,
+        name: isFile ? originalName : undefined,
         previewUrl: signed?.signedUrl ?? null,
       },
       "Attachment uploaded"
