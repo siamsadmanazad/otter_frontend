@@ -3,6 +3,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const CHAT_ATTACHMENTS_BUCKET = "chat-attachments";
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
+/** One option's tally on a poll attachment, pre-hydration. */
+export interface PollVote {
+  count: number;
+  mine: boolean;
+  voterIds?: string[];
+}
+
 export interface ChatAttachment {
   type: string;
   path?: string;
@@ -13,6 +20,10 @@ export interface ChatAttachment {
   name?: string;
   /** B7 — the shared profile's id, "contact"-type attachments only. */
   userId?: string;
+  /** B7 — "poll"-type only: question text, options, and per-option tallies. */
+  question?: string;
+  options?: string[];
+  votes?: unknown[];
   [key: string]: unknown;
 }
 
@@ -82,12 +93,19 @@ export async function signAttachments(
 export async function hydrateContactAttachments<
   T extends { attachments?: ChatAttachment[] | null }
 >(db: SupabaseClient, messages: T[]): Promise<T[]> {
+  // Both a shared contact and a poll's voters resolve to profiles, so they
+  // share ONE query rather than stacking two round trips — same batching
+  // discipline Step A3 established for the rest of this route.
   const ids = [
     ...new Set(
       messages.flatMap((m) =>
-        (m.attachments ?? [])
-          .filter((a) => a?.type === "contact" && typeof a.userId === "string")
-          .map((a) => a.userId as string)
+        (m.attachments ?? []).flatMap((a) => {
+          if (a?.type === "contact" && typeof a.userId === "string") return [a.userId];
+          if (a?.type === "poll" && Array.isArray(a.votes)) {
+            return (a.votes as PollVote[]).flatMap((v) => v?.voterIds ?? []);
+          }
+          return [];
+        })
       )
     ),
   ];
@@ -98,15 +116,34 @@ export async function hydrateContactAttachments<
     .select("id, username, full_name, profile_image")
     .in("id", ids);
   const byId = new Map((data ?? []).map((p: Record<string, any>) => [p.id, p]));
+  const voterOf = (uid: string) => {
+    const p = byId.get(uid);
+    return p
+      ? { id: p.id, name: p.full_name, username: p.username, image: p.profile_image }
+      : { id: uid };
+  };
 
   return messages.map((m) => ({
     ...m,
     attachments: (m.attachments ?? []).map((a) => {
-      if (a?.type !== "contact" || typeof a.userId !== "string") return a;
-      const p = byId.get(a.userId);
-      return p
-        ? { ...a, username: p.username, name: p.full_name, image: p.profile_image }
-        : a;
+      if (a?.type === "contact" && typeof a.userId === "string") {
+        const p = byId.get(a.userId);
+        return p
+          ? { ...a, username: p.username, name: p.full_name, image: p.profile_image }
+          : a;
+      }
+      if (a?.type === "poll" && Array.isArray(a.votes)) {
+        return {
+          ...a,
+          // Swap raw ids for renderable voters; drop voterIds so the client
+          // isn't handed two representations of the same thing.
+          votes: (a.votes as PollVote[]).map(({ voterIds, ...v }) => ({
+            ...v,
+            voters: (voterIds ?? []).map(voterOf),
+          })),
+        };
+      }
+      return a;
     }),
   }));
 }

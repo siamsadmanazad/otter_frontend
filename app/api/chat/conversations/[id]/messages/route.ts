@@ -28,9 +28,29 @@ const VOICE_TTL_MS = 24 * 60 * 60 * 1000;
 // sets are kept apart rather than special-cased inside one predicate.
 const STORAGE_ATTACHMENT_TYPES = new Set(["image", "video", "voice", "file"]);
 const REFERENCE_ATTACHMENT_TYPES = new Set(["contact"]);
+// A third shape: SELF-CONTAINED content that is neither a blob nor a pointer.
+// A poll's question/options are immutable message content, so they live in the
+// jsonb itself; only its mutable votes get a table (see the poll_votes
+// migration for why the split falls there).
+const CONTENT_ATTACHMENT_TYPES = new Set(["poll"]);
 const MAX_ATTACHMENTS_PER_MESSAGE = 1;
 const MAX_FILE_NAME_LENGTH = 150;
+const MAX_POLL_QUESTION_LENGTH = 200;
+const MAX_POLL_OPTION_LENGTH = 80;
+const MAX_POLL_OPTIONS = 10; // keep in sync with the migration's option_index CHECK
+const MIN_POLL_OPTIONS = 2;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Trim + cap a poll's options, dropping blanks. Returns [] if unusable. */
+function sanitizePollOptions(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const opts = input
+    .filter((o): o is string => typeof o === "string")
+    .map((o) => o.trim().slice(0, MAX_POLL_OPTION_LENGTH))
+    .filter((o) => !!o)
+    .slice(0, MAX_POLL_OPTIONS);
+  return opts.length >= MIN_POLL_OPTIONS ? opts : [];
+}
 
 // Whitelist incoming attachment fields and cap the count — never trust the client's
 // shape verbatim (e.g. a stale `url` must never get persisted into the jsonb column).
@@ -52,12 +72,26 @@ function sanitizeAttachments(input: unknown): Record<string, unknown>[] {
         const userId = (a as Record<string, unknown>).userId;
         return typeof userId === "string" && UUID_RE.test(userId);
       }
+      if (CONTENT_ATTACHMENT_TYPES.has(type)) {
+        const q = (a as Record<string, unknown>).question;
+        return (
+          typeof q === "string" &&
+          !!q.trim() &&
+          sanitizePollOptions((a as Record<string, unknown>).options).length > 0
+        );
+      }
       return false;
     })
     .slice(0, MAX_ATTACHMENTS_PER_MESSAGE)
     .map((a) =>
       a.type === "contact"
         ? { type: a.type, userId: a.userId }
+        : a.type === "poll"
+        ? {
+            type: a.type,
+            question: (a.question as string).trim().slice(0, MAX_POLL_QUESTION_LENGTH),
+            options: sanitizePollOptions(a.options),
+          }
         : {
             type: a.type,
             path: a.path,
@@ -203,12 +237,26 @@ export async function GET(
     ...new Set(rows.map((m: any) => m.reply_to_id).filter(Boolean)),
   ] as string[];
 
-  const [rxRes, repsRes] = await Promise.all([
+  // Only messages that actually carry a poll need a vote lookup — most pages
+  // have none, and an empty `in()` would still cost a round trip.
+  const pollIds = rows
+    .filter((m: any) =>
+      Array.isArray(m.attachments) && m.attachments[0]?.type === "poll" && !m.deleted_at
+    )
+    .map((m: any) => m.id);
+
+  const [rxRes, repsRes, votesRes] = await Promise.all([
     ids.length
       ? db.from("message_reactions").select("message_id, emoji, user_id").in("message_id", ids)
       : Promise.resolve({ data: [] as any[] }),
     replyIds.length
       ? db.from("messages").select("id, sender_id, content, deleted_at").in("id", replyIds)
+      : Promise.resolve({ data: [] as any[] }),
+    pollIds.length
+      ? db
+          .from("message_poll_votes")
+          .select("message_id, option_index, user_id")
+          .in("message_id", pollIds)
       : Promise.resolve({ data: [] as any[] }),
   ]);
   timer.mark("enrich");
@@ -228,6 +276,34 @@ export async function GET(
       mid,
       [...byEmoji.entries()].map(([emoji, v]) => ({ emoji, ...v }))
     );
+  }
+
+  // Poll tallies, folded onto the poll attachment itself so the client reads
+  // one object instead of correlating a side-channel list. Voter ids only here;
+  // they become {id,name,username,image} in the hydrate pass, batched with the
+  // contact lookup so both share a single profiles query.
+  const votesByMsg = new Map<string, Map<number, { count: number; mine: boolean; voterIds: string[] }>>();
+  for (const v of votesRes.data ?? []) {
+    const byOpt = votesByMsg.get(v.message_id) ?? new Map();
+    const cur = byOpt.get(v.option_index) ?? { count: 0, mine: false, voterIds: [] };
+    cur.count += 1;
+    cur.voterIds.push(v.user_id);
+    if (v.user_id === me.id) cur.mine = true;
+    byOpt.set(v.option_index, cur);
+    votesByMsg.set(v.message_id, byOpt);
+  }
+  for (const m of rows as any[]) {
+    if (!Array.isArray(m.attachments) || m.attachments[0]?.type !== "poll") continue;
+    const byOpt = votesByMsg.get(m.id);
+    const optionCount = (m.attachments[0].options as unknown[])?.length ?? 0;
+    m.attachments = [
+      {
+        ...m.attachments[0],
+        votes: Array.from({ length: optionCount }, (_, i) =>
+          byOpt?.get(i) ?? { count: 0, mine: false, voterIds: [] }
+        ),
+      },
+    ];
   }
 
   const replyById = new Map<string, ReplyPreview>();
