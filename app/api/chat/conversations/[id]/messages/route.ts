@@ -5,8 +5,9 @@ import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
 import { enforceRateLimit } from "@/lib/ratelimit";
 import {
+  hydrateContactAttachments,
   signAttachments,
-  signAttachmentsForMessages,
+  resolveAttachmentsForMessages,
   purgeExpiredVoiceRows,
   maskExpiredVoiceRows,
   persistExpiredVoicePurge,
@@ -21,38 +22,56 @@ import { createStageTimer } from "@/lib/api/timing";
 
 const VOICE_TTL_MS = 24 * 60 * 60 * 1000;
 
-const ATTACHMENT_TYPES = new Set(["image", "video", "voice", "file"]);
+// Attachments come in two shapes: STORAGE-backed ones identified by a bucket
+// `path`, and REFERENCE ones that point at another row by id and carry no blob
+// at all (B7's shared-profile "contact"). They validate differently, so the
+// sets are kept apart rather than special-cased inside one predicate.
+const STORAGE_ATTACHMENT_TYPES = new Set(["image", "video", "voice", "file"]);
+const REFERENCE_ATTACHMENT_TYPES = new Set(["contact"]);
 const MAX_ATTACHMENTS_PER_MESSAGE = 1;
 const MAX_FILE_NAME_LENGTH = 150;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Whitelist incoming attachment fields and cap the count — never trust the client's
 // shape verbatim (e.g. a stale `url` must never get persisted into the jsonb column).
 function sanitizeAttachments(input: unknown): Record<string, unknown>[] {
   if (!Array.isArray(input)) return [];
   return input
-    .filter(
-      (a): a is Record<string, unknown> =>
-        !!a &&
-        typeof a === "object" &&
-        typeof (a as Record<string, unknown>).type === "string" &&
-        ATTACHMENT_TYPES.has((a as Record<string, unknown>).type as string) &&
-        typeof (a as Record<string, unknown>).path === "string" &&
-        !!(a as Record<string, unknown>).path
-    )
+    .filter((a): a is Record<string, unknown> => {
+      if (!a || typeof a !== "object") return false;
+      const type = (a as Record<string, unknown>).type;
+      if (typeof type !== "string") return false;
+      if (STORAGE_ATTACHMENT_TYPES.has(type)) {
+        const path = (a as Record<string, unknown>).path;
+        return typeof path === "string" && !!path;
+      }
+      if (REFERENCE_ATTACHMENT_TYPES.has(type)) {
+        // A contact persists ONLY the id — the display fields are resolved
+        // per-request (see hydrateContactAttachments), so anything else the
+        // client sends is dropped here rather than frozen into the column.
+        const userId = (a as Record<string, unknown>).userId;
+        return typeof userId === "string" && UUID_RE.test(userId);
+      }
+      return false;
+    })
     .slice(0, MAX_ATTACHMENTS_PER_MESSAGE)
-    .map((a) => ({
-      type: a.type,
-      path: a.path,
-      size: typeof a.size === "number" ? a.size : undefined,
-      duration: typeof a.duration === "number" ? a.duration : undefined,
-      // B7 — the "file" type's display name (upload route already sanitizes
-      // it; re-cap the length here too since this is the actual trust
-      // boundary for what gets persisted).
-      name:
-        a.type === "file" && typeof a.name === "string" && a.name
-          ? a.name.slice(0, MAX_FILE_NAME_LENGTH)
-          : undefined,
-    }));
+    .map((a) =>
+      a.type === "contact"
+        ? { type: a.type, userId: a.userId }
+        : {
+            type: a.type,
+            path: a.path,
+            size: typeof a.size === "number" ? a.size : undefined,
+            duration: typeof a.duration === "number" ? a.duration : undefined,
+            // B7 — the "file" type's display name (upload route already
+            // sanitizes it; re-cap the length here too since this is the
+            // actual trust boundary for what gets persisted).
+            name:
+              a.type === "file" && typeof a.name === "string" && a.name
+                ? a.name.slice(0, MAX_FILE_NAME_LENGTH)
+                : undefined,
+          }
+    );
 }
 
 // This route runs as the CALLER (actor client) so Postgres RLS enforces participation
@@ -232,10 +251,12 @@ export async function GET(
     )
     .reverse();
 
-  // Resolve attachment paths to fresh signed URLs. Requires the admin client:
-  // chat-attachments' storage RLS is owner-path-scoped, so a caller reading a
-  // conversation peer's attachment could never sign it via their own actor client.
-  const signed = await signAttachmentsForMessages(createAdminClient(), messages);
+  // Resolve every attachment's per-request fields: storage paths -> fresh
+  // signed URLs, and contact ids -> profile display fields. Requires the admin
+  // client for the signing half: chat-attachments' storage RLS is
+  // owner-path-scoped, so a caller reading a conversation peer's attachment
+  // could never sign it via their own actor client.
+  const signed = await resolveAttachmentsForMessages(createAdminClient(), messages);
   timer.mark("signAttachments");
   timer.finish({ count: signed.length });
   return ok(signed, "Messages fetched");
@@ -362,6 +383,12 @@ export async function POST(
     }
   }
 
+  // Same two-part resolve as the GET path, for the just-sent message's own
+  // echo — so a contact bubble renders immediately instead of waiting for the
+  // sender's next fetch to fill its name/avatar in.
   const signedAttachments = await signAttachments(admin, mapped.attachments, mapped.listenOnce);
-  return ok({ ...mapped, attachments: signedAttachments }, "Message sent");
+  const [resolved] = await hydrateContactAttachments(admin, [
+    { ...mapped, attachments: signedAttachments },
+  ]);
+  return ok(resolved, "Message sent");
 }

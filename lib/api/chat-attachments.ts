@@ -11,6 +11,8 @@ export interface ChatAttachment {
   url?: string;
   /** B7 — display filename, "file"-type attachments only. */
   name?: string;
+  /** B7 — the shared profile's id, "contact"-type attachments only. */
+  userId?: string;
   [key: string]: unknown;
 }
 
@@ -57,6 +59,68 @@ export async function signAttachments(
 ): Promise<ChatAttachment[]> {
   const [signed] = await signAttachmentsForMessages(admin, [{ attachments, listenOnce }]);
   return signed.attachments ?? [];
+}
+
+/**
+ * B7 — fill in the display fields of every `contact` attachment (a shared
+ * TripOtter profile) across [messages], in ONE query for the whole page.
+ *
+ * Only `userId` is ever persisted for a contact; username/name/image are
+ * resolved per-request here and never written back — exactly the same
+ * reasoning as `url` vs `path` above. A snapshot of someone's name and
+ * avatar taken at send time goes stale the moment they change either, and a
+ * months-old thread would keep showing the wrong person; the id doesn't rot.
+ *
+ * Batched deliberately (one `in` query, not per-attachment) to keep the DM
+ * speed program's Step A3 waterfall-collapse property intact.
+ *
+ * `profiles` is world-readable (`profiles_select_all`), so this needs no
+ * admin escalation — but it takes whatever client the caller already has.
+ * A profile that no longer exists resolves to nothing and the client renders
+ * its own fallback, rather than failing the whole message fetch.
+ */
+export async function hydrateContactAttachments<
+  T extends { attachments?: ChatAttachment[] | null }
+>(db: SupabaseClient, messages: T[]): Promise<T[]> {
+  const ids = [
+    ...new Set(
+      messages.flatMap((m) =>
+        (m.attachments ?? [])
+          .filter((a) => a?.type === "contact" && typeof a.userId === "string")
+          .map((a) => a.userId as string)
+      )
+    ),
+  ];
+  if (!ids.length) return messages;
+
+  const { data } = await db
+    .from("profiles")
+    .select("id, username, full_name, profile_image")
+    .in("id", ids);
+  const byId = new Map((data ?? []).map((p: Record<string, any>) => [p.id, p]));
+
+  return messages.map((m) => ({
+    ...m,
+    attachments: (m.attachments ?? []).map((a) => {
+      if (a?.type !== "contact" || typeof a.userId !== "string") return a;
+      const p = byId.get(a.userId);
+      return p
+        ? { ...a, username: p.username, name: p.full_name, image: p.profile_image }
+        : a;
+    }),
+  }));
+}
+
+/**
+ * The single entry point every chat read path should use: resolves the
+ * ephemeral parts of every attachment type (storage signed URLs + contact
+ * profile fields). Exists so a new read path can't quietly forget one of
+ * them — the failure mode would be a silently half-rendered bubble.
+ */
+export async function resolveAttachmentsForMessages<
+  T extends { attachments?: ChatAttachment[] | null; listenOnce?: boolean }
+>(admin: SupabaseClient, messages: T[]): Promise<T[]> {
+  return hydrateContactAttachments(admin, await signAttachmentsForMessages(admin, messages));
 }
 
 export const EXPIRED_VOICE_TEXT = "[voice message expired]";
