@@ -49,12 +49,25 @@ export function resolveMaybeRelative(url: string | undefined, base: string): str
   }
 }
 
+// feed_genres.md Phase 10.1 -- the upstream fetch is capped at 2MB
+// (ssrf-guard.ts's MAX_BODY_BYTES), but nothing capped how much of a
+// malicious page's <meta> content made it into `posts.link` (jsonb,
+// unbounded) before this. A page can put arbitrary bytes in an og:title.
+const TITLE_LIMIT = 300;
+const DESCRIPTION_LIMIT = 500;
+
+function clip(s: string | undefined, limit: number): string | undefined {
+  if (!s) return s;
+  return s.length > limit ? s.slice(0, limit).trimEnd() : s;
+}
+
 export function buildPreview(html: string, finalUrl: string, domain: string): LinkPreview {
   return {
     url: finalUrl,
     domain,
-    title: extractMeta(html, ["og:title", "twitter:title"]) ?? extractTitleTag(html) ?? null,
-    description: extractMeta(html, ["og:description", "twitter:description", "description"]) ?? null,
+    title: clip(extractMeta(html, ["og:title", "twitter:title"]) ?? extractTitleTag(html), TITLE_LIMIT) ?? null,
+    description:
+      clip(extractMeta(html, ["og:description", "twitter:description", "description"]), DESCRIPTION_LIMIT) ?? null,
     image: resolveMaybeRelative(extractMeta(html, ["og:image", "twitter:image"]), finalUrl),
   };
 }

@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
 import { canViewProfile } from "@/lib/api/visibility";
+import { enforceRateLimit } from "@/lib/ratelimit";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -91,6 +92,12 @@ export async function POST(request: NextRequest): Promise<Response> {
     const user = await getServerUser(request);
     if (!user) return fail("Unauthorized", 401);
 
+    // feed_genres.md Phase 10.1 -- post creation had no rate limit at all
+    // (predates the genre split), and a genre=POST row needs no image/upload
+    // step, which lowers the cost of spamming it far below a MOMENT/JOURNAL.
+    const limited = await enforceRateLimit("posts_create", user.id, request, 10, 300);
+    if (limited) return limited;
+
     const body = await request.json();
     const images: string[] = Array.isArray(body.image) ? body.image : body.images ?? [];
     const caption: string | undefined = body.caption;
@@ -105,6 +112,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       const title: string | undefined = body.title;
       if (!title || !title.trim()) {
         return fail("A Post needs a title", 400);
+      }
+      // feed_genres.md Phase 10.1 -- title had no length cap at all (a new
+      // field, nothing pre-existing to preserve compat with); posts_title_length_chk
+      // is the DB-level backstop, same defence-in-depth pattern as the checks below.
+      if (title.trim().length > 300) {
+        return fail("A Post title can be at most 300 characters", 400);
       }
       if ((!caption || !caption.trim()) && images.length === 0) {
         return fail("Add a body, or at least a title, to your Post", 400);
