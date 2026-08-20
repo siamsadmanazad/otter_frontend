@@ -63,6 +63,9 @@ export async function POST(request: NextRequest): Promise<Response> {
       if (error.message.includes("SELF_INTENT")) {
         return fail("You can't react to your own post that way", 409);
       }
+      if (error.message.includes("CANNOT_INTEND_POST")) {
+        return fail("Posts don't support that reaction", 400);
+      }
       if (error.message.includes("POST_NOT_FOUND")) return fail("Post not found", 404);
       return fail(error.message, 500);
     }

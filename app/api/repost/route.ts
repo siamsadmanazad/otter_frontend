@@ -71,6 +71,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     });
     if (error) {
       if (error.message.includes("SELF_REPOST")) return fail("You can't echo your own post", 409);
+      if (error.message.includes("CANNOT_REPOST_POST")) return fail("Posts can't be echoed", 400);
       if (error.message.includes("POST_NOT_FOUND")) return fail("Post not found", 404);
       return fail(error.message, 500);
     }
