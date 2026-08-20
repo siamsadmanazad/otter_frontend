@@ -14,8 +14,10 @@ function mapComment(c: Record<string, any> | null) {
     post: c.post_id,
     parentId: c.parent_id ?? null,
     likeCount: c.like_count ?? 0,
+    downCount: c.down_count ?? 0,
     replyCount: c.reply_count ?? 0,
     iLiked: false, // a comment you just created/edited can't already be liked by you
+    myVote: null,
     owner: c.owner
       ? {
           id: c.owner.id,
@@ -63,7 +65,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       .from("comments")
       .insert({ owner_id: user.id, post_id: postId, content, parent_id: parentId })
       .select(
-        "id, content, created_at, updated_at, post_id, parent_id, like_count, reply_count, owner:profiles!comments_owner_id_fkey(id, username, full_name, profile_image)"
+        "id, content, created_at, updated_at, post_id, parent_id, like_count, down_count, reply_count, owner:profiles!comments_owner_id_fkey(id, username, full_name, profile_image)"
       )
       .single();
     if (error) {
