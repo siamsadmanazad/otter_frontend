@@ -30,6 +30,9 @@ export interface ChatAttachment {
   endAt?: string;
   location?: string;
   note?: string;
+  /** B7 — "location"-type only: a precise device-GPS pin, never fuzzed. */
+  lat?: number;
+  lng?: number;
   [key: string]: unknown;
 }
 

@@ -36,7 +36,15 @@ const REFERENCE_ATTACHMENT_TYPES = new Set(["contact"]);
 // action, not an in-app RSVP) has no mutable half at all, so it needs nothing
 // beyond this branch. If RSVP tracking gets added later, it follows poll's
 // exact split: the card stays here, attendance gets a table.
-const CONTENT_ATTACHMENT_TYPES = new Set(["poll", "event"]);
+// "location" (B7, OStad's 2026-08-20 scope call for V1/launch): a precise
+// device-GPS pin, NOT fuzzed like Radar — a DM is a deliberate 1:1 share to
+// someone already in the conversation, a different privacy act than
+// appearing to nearby strangers (see the Contact step's identical reasoning,
+// `[[radar-phase3-progress]]`/`[[radar-phase7-scope]]`). No place search/pin
+// drop and no static-map preview in V1 — both need a new Google API key +
+// billing this close to launch; "Open in Maps" is a plain
+// google.com/maps?q=lat,lng link instead, which needs nothing new.
+const CONTENT_ATTACHMENT_TYPES = new Set(["poll", "event", "location"]);
 const MAX_ATTACHMENTS_PER_MESSAGE = 1;
 const MAX_FILE_NAME_LENGTH = 150;
 const MAX_POLL_QUESTION_LENGTH = 200;
@@ -110,6 +118,21 @@ function sanitizeAttachments(input: unknown): Record<string, unknown>[] {
             parseIsoInstant(rec.endAt)! >= startAt);
         return title && !!startAt && endAt && !!endNotBeforeStart;
       }
+      if (type === "location") {
+        const rec = a as Record<string, unknown>;
+        const lat = rec.lat;
+        const lng = rec.lng;
+        return (
+          typeof lat === "number" &&
+          typeof lng === "number" &&
+          Number.isFinite(lat) &&
+          Number.isFinite(lng) &&
+          lat >= -90 &&
+          lat <= 90 &&
+          lng >= -180 &&
+          lng <= 180
+        );
+      }
       return false;
     })
     .slice(0, MAX_ATTACHMENTS_PER_MESSAGE)
@@ -137,6 +160,8 @@ function sanitizeAttachments(input: unknown): Record<string, unknown>[] {
                 ? a.note.trim().slice(0, MAX_EVENT_NOTE_LENGTH)
                 : undefined,
           }
+        : a.type === "location"
+        ? { type: a.type, lat: a.lat, lng: a.lng }
         : {
             type: a.type,
             path: a.path,
