@@ -66,6 +66,25 @@ export async function GET(request: NextRequest): Promise<Response> {
   }
 }
 
+// The three genre values a client may send. feed_genres.md §5.1: `genre` is
+// the new, explicit field -- when present it's authoritative. When absent
+// (every client shipped before this genre split), the legacy `postType`
+// mapping below is used instead, and it can ONLY ever produce MOMENT or
+// JOURNAL -- never POST. That's not an oversight: an old client has no genre
+// picker, no title field, and no way to send one, so there's nothing for it
+// to accidentally create. A stray `postType: 'POST'` from an old build meant
+// "photo post" in the old vocabulary and is mapped to MOMENT here, matching
+// what that row would have been before this migration set ever ran.
+const GENRE_VALUES = new Set(["MOMENT", "JOURNAL", "POST"]);
+
+function resolveGenre(body: Record<string, unknown>): "MOMENT" | "JOURNAL" | "POST" {
+  const explicit = typeof body.genre === "string" ? body.genre.toUpperCase() : undefined;
+  if (explicit && GENRE_VALUES.has(explicit)) {
+    return explicit as "MOMENT" | "JOURNAL" | "POST";
+  }
+  return body.postType === "JOURNAL" ? "JOURNAL" : "MOMENT";
+}
+
 // POST /api/posts -> create post (owner = authenticated user)
 export async function POST(request: NextRequest): Promise<Response> {
   try {
@@ -75,24 +94,65 @@ export async function POST(request: NextRequest): Promise<Response> {
     const body = await request.json();
     const images: string[] = Array.isArray(body.image) ? body.image : body.images ?? [];
     const caption: string | undefined = body.caption;
-    if ((!caption || !caption.trim()) && images.length === 0) {
+    const genre = resolveGenre(body);
+    const tribeId: string | null = body.fromGroup ?? body.tribeId ?? null;
+    const db = createAdminClient();
+
+    if (genre === "POST") {
+      // Posts are title-led (feed_genres.md §1.2/§5.2) -- the DB constraint
+      // enforces this too (posts_title_by_genre_chk), but a clear 400 here
+      // beats a raw constraint-violation string reaching the client.
+      const title: string | undefined = body.title;
+      if (!title || !title.trim()) {
+        return fail("A Post needs a title", 400);
+      }
+      if ((!caption || !caption.trim()) && images.length === 0) {
+        return fail("Add a body, or at least a title, to your Post", 400);
+      }
+      // Enrichment cap (D21) -- checked here too so the error is specific;
+      // posts_post_images_cap_chk is the DB-level backstop.
+      if (images.length > 4) {
+        return fail("A Post can carry at most 4 photos", 400);
+      }
+      // Posts are always public content -- never inside a private tribe
+      // (feed_genres.md §1.6/§5.2). Checked proactively here for a clean
+      // error message; posts_reject_post_genre_in_private_tribe_trg is the
+      // database-level backstop (defence in depth, same precedent as the
+      // profile-visibility check existing both in canViewProfile() and RLS).
+      if (tribeId) {
+        const { data: tribeRow } = await db
+          .from("tribes")
+          .select("privacy")
+          .eq("id", tribeId)
+          .single();
+        if (tribeRow && tribeRow.privacy !== "PUBLIC") {
+          return fail("Posts can't be created inside a private tribe", 403);
+        }
+      }
+    } else if (!caption?.trim() && images.length === 0) {
       return fail("At least one of caption or image is required", 400);
     }
 
-    const db = createAdminClient();
     const { data: inserted, error } = await db
       .from("posts")
       .insert({
         owner_id: user.id,
         images,
         caption: caption ?? null,
+        title: genre === "POST" ? (body.title as string).trim() : null,
+        link: genre === "POST" ? body.link ?? null : null,
         location: body.location ?? null,
-        post_type: body.postType === "JOURNAL" ? "JOURNAL" : "POST",
-        tribe_id: body.fromGroup ?? body.tribeId ?? null,
+        post_type: genre,
+        tribe_id: tribeId,
       })
       .select("id")
       .single();
-    if (error) return fail(error.message, 500);
+    if (error) {
+      if (error.message.includes("POST_GENRE_REQUIRES_PUBLIC_TRIBE")) {
+        return fail("Posts can't be created inside a private tribe", 403);
+      }
+      return fail(error.message, 500);
+    }
 
     const { data: post } = await db.rpc("build_post_json", { p_post_id: inserted.id });
     return ok(post, "Post uploaded!");
