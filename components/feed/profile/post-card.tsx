@@ -35,6 +35,7 @@ import {
 } from "@tanstack/react-query";
 import { CommentBox } from "../shared/comment-box";
 import type { SocketLike as Socket } from "@/lib/useWebsocket";
+import { TextPostCard, isTextPost } from "../shared/text-post-card";
 
 const POSTS_PER_PAGE = 3;
 
@@ -344,6 +345,43 @@ export function PostCard({
   const handleDeleteComment = (commentId: string, index: number) => {
     deleteCommentMutation.mutate(commentId);
   };
+
+  // feed_genres.md Phase 9.1 — POST genre is title-led and may be imageless.
+  // Render the minimal read-only card (also what /post/[id] shows for a Post)
+  // instead of the photo-first layout below. All other genres are unchanged.
+  if (isTextPost(post)) {
+    return (
+      <TextPostCard
+        post={post}
+        header={
+          <div className="flex items-center gap-3">
+            <Link href={`/profile/${post?.owner?.id}`}>
+              <Avatar className="w-8 h-8 md:w-10 md:h-10">
+                <AvatarImage
+                  src={post?.owner?.profileImage || "/placeholder.svg"}
+                  alt={post?.owner?.username}
+                />
+                <AvatarFallback className="dark:bg-gray-700 dark:text-gray-300">
+                  {post?.owner?.username?.[0]?.toUpperCase() || "U"}
+                </AvatarFallback>
+              </Avatar>
+            </Link>
+            <div>
+              <Link href={`/profile/${post?.owner?.id}`}>
+                <span className="font-semibold text-sm md:text-base text-gray-900 dark:text-gray-100">
+                  @{post?.owner?.username}
+                </span>
+              </Link>
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                {dayjs(post.createdAt).fromNow()}
+              </div>
+            </div>
+          </div>
+        }
+        className="border-0 border-b md:border rounded-none md:rounded-lg shadow-none md:shadow-sm bg-white dark:bg-gray-800 dark:border-gray-700"
+      />
+    );
+  }
 
   return (
     <Card

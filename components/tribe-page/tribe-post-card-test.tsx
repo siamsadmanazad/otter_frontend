@@ -24,6 +24,7 @@ import { IPostProps } from "@/types/post";
 import { toast } from "sonner";
 import type { SocketLike as Socket } from "@/lib/useWebsocket";
 import { Textarea } from "@/components/ui/textarea";
+import { TextPostCard, isTextPost } from "@/components/feed/shared/text-post-card";
 
 dayjs.extend(relativeTime);
 
@@ -361,6 +362,39 @@ export function TribePostCard({
     };
 
     const isValidId = (id?: string) => id && id.length > 0;
+
+    // feed_genres.md Phase 9.1 — POST genre is title-led and may be imageless,
+    // so the photo-first layout below would render it as an empty card. Every
+    // other genre keeps the exact rendering it has today.
+    if (isTextPost(post)) {
+        return (
+            <TextPostCard
+                post={post}
+                header={
+                    <div className="flex items-center gap-3">
+                        <Avatar className="w-10 h-10">
+                            <AvatarImage
+                                src={post.owner?.profileImage || "/placeholder.svg"}
+                                alt={post.owner?.fullName}
+                            />
+                            <AvatarFallback>{post.owner?.fullName}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                            <div className="font-semibold dark:text-white">
+                                {post.owner?.fullName}
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                                <span>@{post.owner?.username}</span>
+                                <span>•</span>
+                                <span>{dayjs(post.createdAt).fromNow()}</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+                className="dark:bg-gray-900 dark:border-gray-800"
+            />
+        );
+    }
 
     return (
         <Card key={post.id} className="dark:bg-gray-900 dark:border-gray-800">

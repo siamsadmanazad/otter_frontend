@@ -36,6 +36,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { CommentBox } from "../shared/comment-box";
+import { TextPostCard, isTextPost } from "../shared/text-post-card";
 
 export function PostCardV2({
   post,
@@ -421,6 +422,19 @@ export function PostCardV2({
   };
 
   const isValidId = (id?: string) => id && id.length > 0;
+
+  // feed_genres.md Phase 9.1 — a POST-genre row is title-led and may carry no
+  // image, so the photo-first layout below would render it blank. Swap in the
+  // minimal read-only Post card and leave every other genre untouched.
+  if (isTextPost(post)) {
+    return (
+      <TextPostCard
+        post={post}
+        header={<User post={post} />}
+        className="border-0 border-b md:border rounded-none md:rounded-lg shadow-none md:shadow-sm bg-white dark:bg-gray-800 dark:border-gray-700"
+      />
+    );
+  }
 
   return (
     <Card
