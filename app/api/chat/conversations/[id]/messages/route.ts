@@ -29,16 +29,23 @@ const VOICE_TTL_MS = 24 * 60 * 60 * 1000;
 const STORAGE_ATTACHMENT_TYPES = new Set(["image", "video", "voice", "file"]);
 const REFERENCE_ATTACHMENT_TYPES = new Set(["contact"]);
 // A third shape: SELF-CONTAINED content that is neither a blob nor a pointer.
-// A poll's question/options are immutable message content, so they live in the
-// jsonb itself; only its mutable votes get a table (see the poll_votes
-// migration for why the split falls there).
-const CONTENT_ATTACHMENT_TYPES = new Set(["poll"]);
+// A poll's question/options (and an event's title/time/location) are
+// immutable message content, so they live in the jsonb itself. Poll's votes
+// are the one piece of *mutable* state and get their own table; an event (per
+// OStad's 2026-08-19 scope call — an info card with an "add to calendar"
+// action, not an in-app RSVP) has no mutable half at all, so it needs nothing
+// beyond this branch. If RSVP tracking gets added later, it follows poll's
+// exact split: the card stays here, attendance gets a table.
+const CONTENT_ATTACHMENT_TYPES = new Set(["poll", "event"]);
 const MAX_ATTACHMENTS_PER_MESSAGE = 1;
 const MAX_FILE_NAME_LENGTH = 150;
 const MAX_POLL_QUESTION_LENGTH = 200;
 const MAX_POLL_OPTION_LENGTH = 80;
 const MAX_POLL_OPTIONS = 10; // keep in sync with the migration's option_index CHECK
 const MIN_POLL_OPTIONS = 2;
+const MAX_EVENT_TITLE_LENGTH = 150;
+const MAX_EVENT_LOCATION_LENGTH = 200;
+const MAX_EVENT_NOTE_LENGTH = 500;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Trim + cap a poll's options, dropping blanks. Returns [] if unusable. */
@@ -50,6 +57,15 @@ function sanitizePollOptions(input: unknown): string[] {
     .filter((o) => !!o)
     .slice(0, MAX_POLL_OPTIONS);
   return opts.length >= MIN_POLL_OPTIONS ? opts : [];
+}
+
+/** A valid ISO-8601 instant, or null. Rejects non-parsing / garbage strings
+ *  outright rather than silently coercing them (an event with a nonsense
+ *  date is worse than one that failed to send). */
+function parseIsoInstant(input: unknown): string | null {
+  if (typeof input !== "string" || !input) return null;
+  const d = new Date(input);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
 // Whitelist incoming attachment fields and cap the count — never trust the client's
@@ -72,13 +88,27 @@ function sanitizeAttachments(input: unknown): Record<string, unknown>[] {
         const userId = (a as Record<string, unknown>).userId;
         return typeof userId === "string" && UUID_RE.test(userId);
       }
-      if (CONTENT_ATTACHMENT_TYPES.has(type)) {
+      if (type === "poll") {
         const q = (a as Record<string, unknown>).question;
         return (
           typeof q === "string" &&
           !!q.trim() &&
           sanitizePollOptions((a as Record<string, unknown>).options).length > 0
         );
+      }
+      if (type === "event") {
+        const rec = a as Record<string, unknown>;
+        const title = typeof rec.title === "string" && !!rec.title.trim();
+        const startAt = parseIsoInstant(rec.startAt);
+        const endAt = rec.endAt == null ? true : !!parseIsoInstant(rec.endAt);
+        // endAt, when present, must not precede startAt — a calendar entry
+        // that ends before it starts isn't a validation nitpick, it's
+        // nonsense the recipient's calendar app would choke on.
+        const endNotBeforeStart =
+          rec.endAt == null ||
+          (startAt &&
+            parseIsoInstant(rec.endAt)! >= startAt);
+        return title && !!startAt && endAt && !!endNotBeforeStart;
       }
       return false;
     })
@@ -91,6 +121,21 @@ function sanitizeAttachments(input: unknown): Record<string, unknown>[] {
             type: a.type,
             question: (a.question as string).trim().slice(0, MAX_POLL_QUESTION_LENGTH),
             options: sanitizePollOptions(a.options),
+          }
+        : a.type === "event"
+        ? {
+            type: a.type,
+            title: (a.title as string).trim().slice(0, MAX_EVENT_TITLE_LENGTH),
+            startAt: parseIsoInstant(a.startAt),
+            endAt: a.endAt == null ? undefined : parseIsoInstant(a.endAt),
+            location:
+              typeof a.location === "string" && a.location.trim()
+                ? a.location.trim().slice(0, MAX_EVENT_LOCATION_LENGTH)
+                : undefined,
+            note:
+              typeof a.note === "string" && a.note.trim()
+                ? a.note.trim().slice(0, MAX_EVENT_NOTE_LENGTH)
+                : undefined,
           }
         : {
             type: a.type,

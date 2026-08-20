@@ -24,6 +24,12 @@ export interface ChatAttachment {
   question?: string;
   options?: string[];
   votes?: unknown[];
+  /** B7 — "event"-type only: an info card, no RSVP/attendance state. */
+  title?: string;
+  startAt?: string;
+  endAt?: string;
+  location?: string;
+  note?: string;
   [key: string]: unknown;
 }
 
