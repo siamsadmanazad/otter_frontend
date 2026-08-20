@@ -16,8 +16,20 @@ export async function GET(request: NextRequest): Promise<Response> {
 
     if (!q) return ok({ users: [], tribes: [], posts: [] }, "Fetched search results");
 
+    // Resolved once, up front: search_all's posts bucket needs it to gate a
+    // private account's posts (feed_genres.md Phase 1.2 -- previously
+    // unfiltered, the worst instance of the feed's privacy-check gap since
+    // it's reachable by a fully anonymous caller). null is a valid, correct
+    // input -- it means "anonymous", and the RPC only lets PUBLIC posts
+    // through for that case.
+    const viewer = await getServerUser(request);
+
     const db = createAdminClient();
-    const { data, error } = await db.rpc("search_all", { p_query: q, p_limit: limit });
+    const { data, error } = await db.rpc("search_all", {
+      p_query: q,
+      p_limit: limit,
+      p_viewer: viewer?.id ?? null,
+    });
     if (error) throw error;
 
     const payload = (data ?? {}) as {
@@ -29,7 +41,6 @@ export async function GET(request: NextRequest): Promise<Response> {
     let users = (payload.profiles ?? []).map((p) => ({ ...mapPublicUser(p), bio: p.bio ?? null }));
 
     // Drop accounts in a block relationship with the searcher.
-    const viewer = await getServerUser(request);
     if (viewer) {
       const blocked = new Set(await getBlockedPairIds(db, viewer.id));
       if (blocked.size) users = users.filter((u) => u && !blocked.has(u.id as string));
