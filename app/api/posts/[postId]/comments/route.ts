@@ -3,10 +3,15 @@ import { createActorClient } from "@/lib/supabase/server";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
 
-// GET /api/posts/[postId]/comments?page=&limit=  -> top-level comments,
-// newest first, each carrying its own replyCount/likeCount/iLiked.
+// GET /api/posts/[postId]/comments?page=&limit=&sort=top|new|controversial
+// -> top-level comments, each carrying its own
+// replyCount/likeCount/downCount/iLiked/myVote. `sort` defaults to 'new'
+// (unchanged recency ordering); an unrecognized value falls through
+// get_post_comments' own CASE to the 'new' branch, so a bad query param
+// degrades to the default rather than erroring (feed_genres.md Phase 5.2).
 // GET /api/posts/[postId]/comments?parent=<uuid>&page=&limit=  -> that
-// parent's replies, oldest first (a conversation, not a feed).
+// parent's replies, oldest first always (a conversation, not a feed —
+// `sort` doesn't apply to replies, feed_detail_split.md F6).
 //
 // Comments are public read (RLS: comments_select_all), so this never gates
 // on login — an anonymous caller gets the same list with iLiked always
@@ -23,6 +28,7 @@ export async function GET(
     const parentId = sp.get("parent");
     const page = Math.max(1, parseInt(sp.get("page") || "1", 10));
     const limit = Math.min(50, Math.max(1, parseInt(sp.get("limit") || "20", 10)));
+    const sort = sp.get("sort") || "new";
 
     const user = await getServerUser(request);
     const supabase = await createActorClient(request);
@@ -39,6 +45,7 @@ export async function GET(
           p_viewer: user?.id ?? null,
           p_page: page,
           p_limit: limit,
+          p_sort: sort,
         });
     if (error) return fail(error.message, 500);
     return ok(data ?? [], "Comments retrieved");
