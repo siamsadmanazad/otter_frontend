@@ -38,7 +38,14 @@ export async function POST(request: NextRequest): Promise<Response> {
       p_cells: cells,
       p_filters: filters,
     });
-    if (error) return fail(error.message, 500);
+    if (error) {
+      // 200k-user hardening (2026-08-24): backstop against refetch spam
+      // (mashed Recenter, a scripted client) independent of client throttling.
+      if (/rate limited/i.test(error.message)) {
+        return fail("Slow down a little — try again in a moment", 429);
+      }
+      return fail(error.message, 500);
+    }
 
     return ok(data ?? { people: [], individuals: [], places: [], tribes: [], rallies: [], missions: [] }, "Nearby");
   } catch (e) {

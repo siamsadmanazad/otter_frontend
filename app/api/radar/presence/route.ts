@@ -44,7 +44,14 @@ export async function POST(request: NextRequest): Promise<Response> {
       p_is_ghost: isGhost,
       p_is_waveable: isWaveable,
     });
-    if (error) return fail(error.message, 500);
+    if (error) {
+      // 200k-user hardening (2026-08-24): the RPC now rate-limits the
+      // live-write path (never the ghost/delete path — see its own comment).
+      if (/rate limited/i.test(error.message)) {
+        return fail("Slow down a little — try again in a moment", 429);
+      }
+      return fail(error.message, 500);
+    }
 
     // questsCompleted (Otter Radar Phase 6.2): any visit_place quest this
     // heartbeat's cell just satisfied.
