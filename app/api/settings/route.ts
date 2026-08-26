@@ -52,6 +52,15 @@ const patchSchema = z.object({
     })
     .partial()
     .optional(),
+  // Business Mode Phase 1.1 (the Fork) — see IntentPrefs in lib/preferences.ts.
+  intent: z
+    .object({
+      chosen: z.boolean(),
+      kind: z.enum(["", "explorer", "business"]),
+      chosenAt: z.string().max(40),
+    })
+    .partial()
+    .optional(),
 });
 
 // GET /api/settings -> the caller's preferences, merged over defaults.

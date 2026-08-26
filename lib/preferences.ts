@@ -47,12 +47,25 @@ export interface ProfilePrefs {
   budget: "" | "budget" | "mid" | "luxury";
 }
 
+// Business Mode Phase 1.1 (business_mode.md, "The Fork") — the first-run
+// intent choice, recorded once and never re-asked. `kind` is a client-side
+// signal only ("what did they say they came here to do"), distinct from the
+// authoritative `profiles.kind` (EXPLORER/BUSINESS) enum set by 0.2's
+// create_business_profile() — choosing "host" here does not itself create a
+// business profile, it just tells Phase 1.3's setup wizard to offer one.
+export interface IntentPrefs {
+  chosen: boolean;
+  kind: "" | "explorer" | "business";
+  chosenAt: string;
+}
+
 export interface Preferences {
   notifications: NotificationPrefs;
   privacy: PrivacyPrefs;
   business: BusinessPrefs;
   onboarding: OnboardingPrefs;
   profile: ProfilePrefs;
+  intent: IntentPrefs;
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -84,6 +97,11 @@ export const DEFAULT_PREFERENCES: Preferences = {
     travelStyle: "",
     budget: "",
   },
+  intent: {
+    chosen: false,
+    kind: "",
+    chosenAt: "",
+  },
 };
 
 /** Merge a stored (possibly partial / `{}`) blob over the defaults. */
@@ -95,6 +113,7 @@ export function withDefaults(stored: any): Preferences {
     business: { ...DEFAULT_PREFERENCES.business, ...(s.business ?? {}) },
     onboarding: { ...DEFAULT_PREFERENCES.onboarding, ...(s.onboarding ?? {}) },
     profile: { ...DEFAULT_PREFERENCES.profile, ...(s.profile ?? {}) },
+    intent: { ...DEFAULT_PREFERENCES.intent, ...(s.intent ?? {}) },
   };
 }
 
@@ -107,5 +126,6 @@ export function mergePreferences(current: Preferences, patch: any): Preferences 
     business: { ...current.business, ...(p.business ?? {}) },
     onboarding: { ...current.onboarding, ...(p.onboarding ?? {}) },
     profile: { ...current.profile, ...(p.profile ?? {}) },
+    intent: { ...current.intent, ...(p.intent ?? {}) },
   };
 }
