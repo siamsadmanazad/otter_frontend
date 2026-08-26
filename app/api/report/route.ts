@@ -21,7 +21,12 @@ export async function GET(request: NextRequest): Promise<Response> {
   return ok(data ?? [], "Report fetched");
 }
 
-// POST /api/report  body { data: { reportedUser, scope, reason, reasonDescription?, relatedComment?, relatedPost?, relatedMessage? } }
+// POST /api/report  body { data: { reportedUser, scope, reason, reasonDescription?, relatedComment?, relatedPost?, relatedMessage?, relatedOffering? } }
+// Business Mode Phase 5.2 added relatedOffering/scope:"Offering", mirroring
+// exactly how relatedMessage/scope:"Message" was added before it. Inserting
+// a row with related_offering set is what offerings_report_autosuspend()
+// (a DB trigger) watches — 3+ distinct reporters auto-PAUSEs the offering,
+// nothing extra to call from here.
 export async function POST(request: NextRequest): Promise<Response> {
   const user = await getServerUser(request);
   if (!user) return fail("Unauthorized", 401);
@@ -40,6 +45,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         related_comment: d.relatedComment ?? null,
         related_post: d.relatedPost ?? null,
         related_message: d.relatedMessage ?? null,
+        related_offering: d.relatedOffering ?? null,
         status: "PENDING",
       })
       .select("*")

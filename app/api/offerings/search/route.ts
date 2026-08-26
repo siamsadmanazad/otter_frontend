@@ -5,14 +5,16 @@ import { ok, fail } from "@/lib/api/http";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const H3_RE = /^[0-9a-f]{15,16}$/;
 const TYPES = new Set(["TOUR", "STAY", "EVENT", "CLASS", "RENTAL", "GUIDE", "TRANSPORT", "TABLE"]);
+const VERIFICATION_TIERS = new Set(["UNVERIFIED", "CLAIMED", "ID_VERIFIED", "LICENCE_VERIFIED"]);
 const MAX_CELLS = 512;
 
-// GET /api/offerings/search?q=&nicheId=&type=&cells=a,b,c&limit=
-// Business Mode Phase 4.1 (facet search) + 4.2 (location filtering), via
-// search_offerings(). Public (no auth required, matching search_all's own
-// anon-allowed contract) -- offerings discovery is meant to be found by
-// anyone, same as radar_nearby. `cells` is a client-computed h3 k-ring
-// (device "near me" or a chosen place's ring); omit for a global search.
+// GET /api/offerings/search?q=&nicheId=&type=&cells=a,b,c&limit=&minVerification=
+// Business Mode Phase 4.1 (facet search) + 4.2 (location filtering) + 5.1
+// (verification facet), via search_offerings(). Public (no auth required,
+// matching search_all's own anon-allowed contract) -- offerings discovery is
+// meant to be found by anyone, same as radar_nearby. `cells` is a
+// client-computed h3 k-ring (device "near me" or a chosen place's ring);
+// omit for a global search.
 export async function GET(request: NextRequest): Promise<Response> {
   try {
     const q = request.nextUrl.searchParams.get("q")?.trim() ?? "";
@@ -22,6 +24,10 @@ export async function GET(request: NextRequest): Promise<Response> {
 
     const typeRaw = request.nextUrl.searchParams.get("type");
     const type = typeRaw && TYPES.has(typeRaw) ? typeRaw : null;
+
+    const minVerificationRaw = request.nextUrl.searchParams.get("minVerification");
+    const minVerification =
+      minVerificationRaw && VERIFICATION_TIERS.has(minVerificationRaw) ? minVerificationRaw : null;
 
     const cellsRaw = request.nextUrl.searchParams.get("cells");
     const cells = cellsRaw
@@ -45,6 +51,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       p_type: type,
       p_cells: cells && cells.length > 0 ? cells : null,
       p_limit: limit,
+      p_min_verification: minVerification,
     });
     if (error) return fail(error.message, 500);
 
