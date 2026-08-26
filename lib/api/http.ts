@@ -81,6 +81,7 @@ export function mapProfile(p: Record<string, unknown> | null) {
     coverImage: p.cover_image,
     profileImage: p.profile_image,
     role: p.role,
+    kind: p.kind ?? "EXPLORER",
     reputation: p.reputation,
     active: p.active,
     createdAt: p.created_at,

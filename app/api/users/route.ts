@@ -20,7 +20,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     const { data: profile, error } = await db
       .from("profiles")
       .select(
-        "id, serial, username, full_name, profile_image, cover_image, bio, location, socials, email, active, role, reputation, preferences, created_at, updated_at"
+        "id, serial, username, full_name, profile_image, cover_image, bio, location, socials, email, active, role, reputation, preferences, kind, created_at, updated_at"
       )
       .eq("id", userId)
       .single();
@@ -30,11 +30,30 @@ export async function GET(request: NextRequest): Promise<Response> {
     const viewer = await getServerUser(request);
     const allowed = await canViewProfile(db, viewer?.id ?? null, userId, profile.preferences);
 
-    const [posts, comments, followers, following] = await Promise.all([
+    const isBusiness = profile.kind === "BUSINESS";
+    const [posts, comments, followers, following, businessRow, placeRow] = await Promise.all([
       db.from("posts").select("id", { count: "exact", head: true }).eq("owner_id", userId),
       db.from("comments").select("id", { count: "exact", head: true }).eq("owner_id", userId),
       db.from("follows").select("follower_id", { count: "exact", head: true }).eq("following_id", userId),
       db.from("follows").select("following_id", { count: "exact", head: true }).eq("follower_id", userId),
+      isBusiness
+        ? db
+            .from("business_profiles")
+            .select(
+              "legal_name, contact_email, contact_phone, website, hours, price_band, service_area, verification, niche:niches(id, slug, display_name, color_hex, icon_key)"
+            )
+            .eq("profile_id", userId)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      isBusiness
+        ? db
+            .from("radar_places")
+            .select("id, title, subtitle, lat, lng")
+            .eq("owner_profile_id", userId)
+            .eq("claim_status", "CLAIMED")
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
     ]);
 
     // Secondary enrichment (D14): these 4 count queries can fail independently
@@ -50,6 +69,9 @@ export async function GET(request: NextRequest): Promise<Response> {
     }
 
     const mapped = mapProfile(profile);
+    const business = businessRow.data as Record<string, unknown> | null;
+    const place = placeRow.data as Record<string, unknown> | null;
+    const niche = business?.niche as Record<string, unknown> | null | undefined;
     const data = {
       ...mapped,
       // Hide the personal detail of a restricted profile; keep identity + counts.
@@ -66,6 +88,41 @@ export async function GET(request: NextRequest): Promise<Response> {
         createdAt: profile.created_at,
         updatedAt: profile.updated_at,
       },
+      // Business Mode Phase 2.1 — only present for kind=BUSINESS profiles.
+      // Absent (not an empty object) when there's nothing to show, so the
+      // client can gate module rendering on `data.business != null`.
+      ...(isBusiness && business
+        ? {
+            business: {
+              legalName: business.legal_name,
+              contactEmail: business.contact_email,
+              contactPhone: business.contact_phone,
+              website: business.website,
+              hours: business.hours,
+              priceBand: business.price_band,
+              serviceArea: business.service_area,
+              verification: business.verification,
+              niche: niche
+                ? {
+                    id: niche.id,
+                    slug: niche.slug,
+                    displayName: niche.display_name,
+                    colorHex: niche.color_hex,
+                    iconKey: niche.icon_key,
+                  }
+                : null,
+              place: place
+                ? {
+                    id: place.id,
+                    title: place.title,
+                    subtitle: place.subtitle,
+                    lat: place.lat,
+                    lng: place.lng,
+                  }
+                : null,
+            },
+          }
+        : {}),
     };
     return ok(data, "User data retrieved successfully", 200, countErrors.length > 0);
   } catch (e) {
@@ -101,7 +158,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
       .update(update)
       .eq("id", user.profileId)
       .select(
-        "id, serial, username, full_name, profile_image, cover_image, bio, location, socials, email, active, role, reputation, created_at, updated_at"
+        "id, serial, username, full_name, profile_image, cover_image, bio, location, socials, email, active, role, reputation, kind, created_at, updated_at"
       )
       .single();
 
