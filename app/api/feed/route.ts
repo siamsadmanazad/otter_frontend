@@ -23,6 +23,57 @@ import { captureRouteError } from "@/lib/observability";
 // endpoint. v4's cursor is composite ({momentAt, momentId, postScore,
 // postId, slotIndex}, §5.3a) — five query params instead of v3's two,
 // carried in `nextCursor` exactly the way v3's `cursorAt`/`cursorId` are.
+
+// Business Mode Phase 4.3 -- interleaves live offerings into ONE page's
+// worth of already-fetched v4 posts, entirely independent of get_feed_v4's
+// own cursor/buffer logic (see 20260827160000_offering_blend_settings.sql
+// for why that separation is deliberate, and 20260827170000_offering_
+// blend_sample.sql for why the sample is random per call rather than
+// reusing search_offerings' recency ordering). Cadence is page-relative,
+// not absolute-position: each page/batch restarts its own 1-in-density
+// counter rather than tracking a running position across pages, which
+// keeps this free of any new pagination state of its own -- the average
+// density holds over a long scroll even though exact spacing isn't
+// perfectly even across a page boundary, an accepted trade for staying
+// out of get_feed_v4's cursor entirely. Spliced items are marked with
+// `__feedItemType: "offering"` so the client can distinguish them from a
+// plain post; a real post's shape is completely unchanged (no wrapper),
+// so this has zero effect on any other consumer of this same array shape.
+async function blendOfferings(db: ReturnType<typeof createAdminClient>, posts: any[]) {
+  if (posts.length === 0) return posts;
+  try {
+    const { data: density, error: densityErr } = await db.rpc("offering_blend_density");
+    if (densityErr || !density || density <= 0) return posts;
+
+    const slots = Math.floor(posts.length / density);
+    if (slots <= 0) return posts;
+
+    const { data: sample, error: sampleErr } = await db.rpc("blend_offerings_sample", {
+      p_limit: slots,
+    });
+    if (sampleErr) throw sampleErr;
+    const offerings = (sample as any[]) ?? [];
+    if (offerings.length === 0) return posts;
+
+    const blended: any[] = [];
+    let nextOffering = 0;
+    posts.forEach((post, i) => {
+      blended.push(post);
+      const position = i + 1; // 1-indexed within this page
+      if (position % density === 0 && nextOffering < offerings.length) {
+        blended.push({ __feedItemType: "offering", ...offerings[nextOffering] });
+        nextOffering++;
+      }
+    });
+    return blended;
+  } catch (err) {
+    captureRouteError("offering feed blend failed, serving unblended posts", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return posts;
+  }
+}
+
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
   // Coalesce missing/stringified-undefined ids to null so an unauthenticated or
@@ -74,10 +125,19 @@ export async function GET(request: NextRequest) {
       });
       if (error) throw error;
       const posts = await filterBlocked(db, (data?.posts as any[]) ?? []);
+      // Business Mode Phase 4.3 -- splice live offerings into this PAGE's
+      // post array, entirely additive and independent of get_feed_v4's own
+      // cursor/buffer logic (see 20260827160000_offering_blend_settings.sql
+      // for why that separation is deliberate). Never runs when `only` is
+      // set -- a viewer who explicitly asked for just Moments or just Posts
+      // does not want offerings mixed into that focused view. Fails open:
+      // any error here degrades to the unblended post list, never breaks
+      // the feed.
+      const blended = only ? posts : await blendOfferings(db, posts);
       return NextResponse.json({
         message: "Received feed data",
         status: 200,
-        data: { posts, nextCursor: data?.nextCursor ?? null, served: "v4" },
+        data: { posts: blended, nextCursor: data?.nextCursor ?? null, served: "v4" },
       });
     } catch (err) {
       captureRouteError("feed v4 unavailable, falling back to v3", {
