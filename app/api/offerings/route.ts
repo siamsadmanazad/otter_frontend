@@ -30,6 +30,23 @@ export async function GET(request: NextRequest): Promise<Response> {
 
     if (error) return fail(error.message, 500);
 
+    // Phase 4.5 -- isSaved relative to the VIEWER (RLS on saved_offerings
+    // already scopes this to their own rows), not the owner. Best-effort:
+    // an anonymous viewer or a lookup failure just means every isSaved
+    // stays false, same fail-open shape as other secondary enrichments.
+    const viewer = await getServerUser(request);
+    let savedIds = new Set<string>();
+    if (viewer && data?.length) {
+      const { data: saved } = await db
+        .from("saved_offerings")
+        .select("offering_id")
+        .in(
+          "offering_id",
+          data.map((o) => o.id)
+        );
+      savedIds = new Set((saved ?? []).map((s) => s.offering_id));
+    }
+
     const mapped = (data ?? []).map((o) => ({
       id: o.id,
       type: o.type,
@@ -51,6 +68,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       lat: o.lat,
       lng: o.lng,
       createdAt: o.created_at,
+      isSaved: savedIds.has(o.id),
     }));
 
     return ok(mapped, "Offerings retrieved");
