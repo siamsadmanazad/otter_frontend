@@ -21,6 +21,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       BUSINESS_REQUIRED: 403,
       PLACE_ALREADY_CLAIMED: 409,
       PLACE_NOT_FOUND: 404,
+      SUBSCRIPTION_REQUIRED_MULTI_LOCATION: 402,
     };
     return fail(error.message, known[error.message] ?? 400);
   }

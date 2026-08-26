@@ -73,6 +73,19 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (target.kind !== "EXPLORER") return fail("Only a personal profile can be invited as staff", 400);
 
   const db = await createActorClient(request);
+
+  // Business Mode 7.2's staff-seat gate: check first so a blocked invite gets
+  // a clean 402 instead of a generic RLS-violation message from the insert
+  // below (business_members_insert_admin's WITH CHECK enforces the same
+  // business_can_add_staff_seat rule server-side either way — this is only
+  // about the error a caller sees, not a second source of truth). A no-op
+  // today since subscription_gate_settings.enabled ships false.
+  const { data: canAddSeat, error: seatCheckError } = await db.rpc("business_can_add_staff_seat", {
+    p_business: user.profileId,
+  });
+  if (seatCheckError) return fail(seatCheckError.message, 400);
+  if (!canAddSeat) return fail("SUBSCRIPTION_REQUIRED", 402);
+
   const { error } = await db
     .from("business_members")
     .insert({ business_id: user.profileId, user_id: target.id, role });

@@ -5,6 +5,15 @@ import { ok, fail } from "@/lib/api/http";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// 402 (Payment Required) for the Business Mode 7.2 gate — a no-op today
+// since subscription_gate_settings.enabled ships false, but the right code
+// once it's ever turned on.
+function mapAnalyticsError(message: string): number {
+  if (message === "FORBIDDEN") return 403;
+  if (message === "SUBSCRIPTION_REQUIRED") return 402;
+  return 400;
+}
+
 // GET /api/business/analytics?days=&offeringId=
 // Business Mode Phase 6.1 — the caller's ACTING business's analytics
 // (funnel + discovery source), via business_analytics()/
@@ -36,10 +45,10 @@ export async function GET(request: NextRequest): Promise<Response> {
   ]);
 
   if (funnel.error) {
-    return fail(funnel.error.message, funnel.error.message === "FORBIDDEN" ? 403 : 400);
+    return fail(funnel.error.message, mapAnalyticsError(funnel.error.message));
   }
   if (sources.error) {
-    return fail(sources.error.message, sources.error.message === "FORBIDDEN" ? 403 : 400);
+    return fail(sources.error.message, mapAnalyticsError(sources.error.message));
   }
 
   const rows = (funnel.data ?? []).map((r: Record<string, unknown>) => ({

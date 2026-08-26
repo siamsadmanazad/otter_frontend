@@ -35,7 +35,12 @@ export async function POST(request: NextRequest): Promise<Response> {
     p_confirm_new: body?.confirmNew === true,
   });
   if (error) {
-    const status = error.message === "BUSINESS_REQUIRED" ? 403 : 400;
+    const status =
+      error.message === "BUSINESS_REQUIRED"
+        ? 403
+        : error.message === "SUBSCRIPTION_REQUIRED_MULTI_LOCATION"
+          ? 402
+          : 400;
     return fail(error.message, status);
   }
 
