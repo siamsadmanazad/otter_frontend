@@ -62,7 +62,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const { data, error } = await db
     .from("profiles")
     .select("preferences, role")
-    .eq("id", user.id)
+    .eq("id", user.profileId)
     .single();
   if (error) return fail(error.message, 500);
   return ok(
@@ -84,7 +84,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
   const { data: current, error: readErr } = await db
     .from("profiles")
     .select("preferences")
-    .eq("id", user.id)
+    .eq("id", user.profileId)
     .single();
   if (readErr) return fail(readErr.message, 500);
 
@@ -92,7 +92,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
   const { error: writeErr } = await db
     .from("profiles")
     .update({ preferences: merged })
-    .eq("id", user.id);
+    .eq("id", user.profileId);
   if (writeErr) return fail(writeErr.message, 500);
 
   return ok({ preferences: merged }, "Preferences saved");

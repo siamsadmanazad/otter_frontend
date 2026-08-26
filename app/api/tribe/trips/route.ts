@@ -107,12 +107,12 @@ export async function GET(request: NextRequest): Promise<Response> {
   try {
     const db = createAdminClient();
     if (tripId && requests) {
-      const res = await listRequests(db, tripId, user.id, page, limit);
+      const res = await listRequests(db, tripId, user.profileId, page, limit);
       if (res === null) return fail("Trip not found", 404);
       if (res === "forbidden") return fail("Not allowed", 403);
       return ok(res, "Trip requests");
     }
-    if (tribeId) return ok(await listTrips(db, tribeId, user.id, page, limit), "Trips");
+    if (tribeId) return ok(await listTrips(db, tribeId, user.profileId, page, limit), "Trips");
     return fail("tribeId or tripId is required", 400);
   } catch (e) {
     console.error("GET /api/tribe/trips error:", e);
@@ -135,7 +135,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       .from("tribe_members")
       .select("user_id", { count: "exact", head: true })
       .eq("tribe_id", tribeId)
-      .eq("user_id", user.id);
+      .eq("user_id", user.profileId);
     if (!count) return fail("Join the tribe to post a trip", 403);
 
     const spots = Math.min(50, Math.max(1, parseInt(`${b.spots ?? 1}`, 10) || 1));
@@ -143,7 +143,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       .from("tribe_trips")
       .insert({
         tribe_id: tribeId,
-        owner_id: user.id,
+        owner_id: user.profileId,
         title: b.title.trim(),
         destination: b.destination ?? null,
         trip_start: b.tripStart ?? null,
@@ -177,7 +177,7 @@ export async function DELETE(request: NextRequest): Promise<Response> {
       .eq("id", tripId)
       .single();
     if (!trip) return fail("Trip not found", 404);
-    const allowed = trip.owner_id === user.id || (await isModerator(db, trip.tribe_id, user.id));
+    const allowed = trip.owner_id === user.profileId || (await isModerator(db, trip.tribe_id, user.profileId));
     if (!allowed) return fail("Not allowed", 403);
 
     const { error } = await db.from("tribe_trips").delete().eq("id", tripId);

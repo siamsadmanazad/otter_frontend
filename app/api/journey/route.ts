@@ -8,7 +8,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const user = await getServerUser(request);
   if (!user) return fail("Unauthorized", 401);
   try {
-    const ownerId = request.nextUrl.searchParams.get("id") || user.id;
+    const ownerId = request.nextUrl.searchParams.get("id") || user.profileId;
     const db = createAdminClient();
     const { data } = await db
       .from("posts")

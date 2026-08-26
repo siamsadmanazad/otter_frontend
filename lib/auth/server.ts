@@ -13,7 +13,29 @@ import {
 } from "@supabase/supabase-js";
 
 export interface ServerUser {
+  /**
+   * The authenticated **human** (`auth.users.id`).
+   *
+   * Use for anything that must not be multiplied by switching profiles:
+   * rate limiting, abuse controls, billing. A person with three business
+   * profiles still gets one rate budget.
+   */
   id: string;
+  /**
+   * The **profile the request is acting as** — use for ownership and
+   * authorship: who owns a row, who authored a post, whose settings these are.
+   *
+   * This is the route-layer twin of the database's `current_profile_id()`
+   * (migration `20260826120000_current_profile_id_seam.sql`). RLS only covers
+   * the ~38 routes on the user-scoped client; the ~31 routes on the
+   * service-role client bypass RLS entirely, so their handler logic is the only
+   * gate — this field is that gate's input.
+   *
+   * **Inert today: always identical to `id`.** When Business Mode profile
+   * switching lands (business_mode.md 0.2) only the resolver below changes, to
+   * prefer a validated `acting_profile` claim. Call sites never move again.
+   */
+  profileId: string;
   email: string | null;
 }
 
@@ -81,7 +103,8 @@ async function userFromBearerToken(token: string): Promise<ServerUser | null> {
   if (typeof sub !== "string" || !sub) return null;
 
   const email = typeof claims.email === "string" ? claims.email : null;
-  return { id: sub, email };
+  // profileId is inert (=== id) until Business Mode 0.2 — see ServerUser.profileId.
+  return { id: sub, profileId: sub, email };
 }
 
 export async function getServerUser(req?: Request): Promise<ServerUser | null> {
@@ -95,5 +118,6 @@ export async function getServerUser(req?: Request): Promise<ServerUser | null> {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) return null;
-  return { id: data.user.id, email: data.user.email ?? null };
+  // profileId is inert (=== id) until Business Mode 0.2 — see ServerUser.profileId.
+  return { id: data.user.id, profileId: data.user.id, email: data.user.email ?? null };
 }

@@ -66,7 +66,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   let query = db
     .from("notifications")
     .select(`id, type, target_type, target_id, message, read, created_at, read_at, ${ACTOR}`)
-    .eq("recipient_id", user.id);
+    .eq("recipient_id", user.profileId);
   if (FILTER_TYPES[filter]) query = query.in("type", FILTER_TYPES[filter]);
   if (unread) query = query.eq("read", false);
   const { data, error } = await query
@@ -115,7 +115,7 @@ export async function DELETE(request: NextRequest): Promise<Response> {
     const { error } = await db
       .from("notifications")
       .delete()
-      .eq("recipient_id", user.id);
+      .eq("recipient_id", user.profileId);
     if (error) return fail(error.message, 500);
     return ok({ all: true }, "All notifications cleared");
   }
@@ -125,7 +125,7 @@ export async function DELETE(request: NextRequest): Promise<Response> {
     .from("notifications")
     .delete()
     .eq("id", id)
-    .eq("recipient_id", user.id);
+    .eq("recipient_id", user.profileId);
   if (error) return fail(error.message, 500);
   return ok({ id }, "Notification deleted");
 }
@@ -142,7 +142,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
     await db
       .from("notifications")
       .update({ read: true, read_at: now })
-      .eq("recipient_id", user.id)
+      .eq("recipient_id", user.profileId)
       .eq("read", false);
     return ok({ all: true }, "All notifications marked read");
   }
@@ -151,7 +151,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
     .from("notifications")
     .update({ read: true, read_at: now })
     .eq("id", body.id)
-    .eq("recipient_id", user.id)
+    .eq("recipient_id", user.profileId)
     .select("id")
     .single();
   if (error || !data) return fail("Notification not found", 404);

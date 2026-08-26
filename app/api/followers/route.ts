@@ -15,7 +15,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     if (!targetUserId?.trim()) return fail("targetUserId is required", 400);
 
     // Can't follow across a block (either direction).
-    if (await isBlockedPair(createAdminClient(), user.id, targetUserId))
+    if (await isBlockedPair(createAdminClient(), user.profileId, targetUserId))
       return fail("You can't follow this account", 403);
 
     const supabase = await createActorClient(request);

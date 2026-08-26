@@ -99,7 +99,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
     const { data, error } = await db
       .from("profiles")
       .update(update)
-      .eq("id", user.id)
+      .eq("id", user.profileId)
       .select(
         "id, serial, username, full_name, profile_image, cover_image, bio, location, socials, email, active, role, reputation, created_at, updated_at"
       )

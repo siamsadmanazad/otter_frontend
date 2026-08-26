@@ -186,7 +186,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     } else if (posts === "true" && tribeId && page && limit) {
       payload = await tribePosts(db, tribeId, page, limit);
     } else if (ownership) {
-      payload = await tribesByOwnership(db, ownership, user.id, page, limit, interests);
+      payload = await tribesByOwnership(db, ownership, user.profileId, page, limit, interests);
     } else if (page && limit) {
       payload = await listTribes(db, page, limit);
     } else if (tribeId) {
@@ -226,7 +226,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         destination: b.destination ?? null,
         trip_start: b.tripStart ?? null,
         trip_end: b.tripEnd ?? null,
-        created_by: user.id,
+        created_by: user.profileId,
       })
       .select(TRIBE_COLS)
       .single();
@@ -235,7 +235,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     // creator is also a member — and the FOUNDER
     await db
       .from("tribe_members")
-      .insert({ tribe_id: tribe.id, user_id: user.id, role: "FOUNDER" });
+      .insert({ tribe_id: tribe.id, user_id: user.profileId, role: "FOUNDER" });
     return ok(mapTribe(tribe), "Created tribe");
   } catch (e) {
     console.error("POST /api/tribe error:", e);
@@ -276,7 +276,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
     if (!tribeRow) return fail("Tribe not found", 404);
     const { data: canMod } = await db.rpc("can_moderate_tribe", {
       p_tribe_id: tribeRow.id,
-      p_uid: user.id,
+      p_uid: user.profileId,
     });
     if (!canMod) return fail("Not allowed to edit this tribe", 403);
 
@@ -305,7 +305,7 @@ export async function DELETE(request: NextRequest): Promise<Response> {
       .from("tribes")
       .delete()
       .eq("id", tribeId)
-      .eq("created_by", user.id)
+      .eq("created_by", user.profileId)
       .select("id")
       .single();
     if (error || !data) return fail("Failed deleting tribe", 400);

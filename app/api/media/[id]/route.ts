@@ -19,7 +19,7 @@ export async function DELETE(
     .select("id, bucket, path, owner_id")
     .eq("id", id)
     .maybeSingle();
-  if (!media || media.owner_id !== user.id) {
+  if (!media || media.owner_id !== user.profileId) {
     return NextResponse.json({ error: "Media not found" }, { status: 404 });
   }
   await db.storage.from(media.bucket).remove([media.path]);

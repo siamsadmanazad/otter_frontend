@@ -36,13 +36,13 @@ export async function GET(
     const { data, error } = parentId
       ? await supabase.rpc("get_comment_replies", {
           p_parent_id: parentId,
-          p_viewer: user?.id ?? null,
+          p_viewer: user?.profileId ?? null,
           p_page: page,
           p_limit: limit,
         })
       : await supabase.rpc("get_post_comments", {
           p_post_id: postId,
-          p_viewer: user?.id ?? null,
+          p_viewer: user?.profileId ?? null,
           p_page: page,
           p_limit: limit,
           p_sort: sort,

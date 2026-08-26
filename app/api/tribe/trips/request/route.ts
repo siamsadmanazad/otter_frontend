@@ -39,7 +39,7 @@ export async function DELETE(request: NextRequest): Promise<Response> {
       .from("tribe_trip_requests")
       .delete()
       .eq("trip_id", tripId)
-      .eq("user_id", user.id);
+      .eq("user_id", user.profileId);
     if (error) return fail(error.message, 400);
     return ok({ tripId, status: "NONE" }, "Request cancelled");
   } catch (e) {

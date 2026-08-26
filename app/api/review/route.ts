@@ -33,7 +33,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const { data, error } = await db
       .from("reviews")
       .insert({
-        user_id: user.id,
+        user_id: user.profileId,
         type: b.type === "BUG_REPORT" ? "BUG_REPORT" : "REVIEW",
         scope: b.scope ?? "USER_EXPERIENCE",
         review: b.review ?? null,
@@ -75,7 +75,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
       .from("reviews")
       .update(update)
       .eq("id", id)
-      .eq("user_id", user.id)
+      .eq("user_id", user.profileId)
       .select("*")
       .single();
     if (error || !data) return fail("Review not found", 404);
@@ -97,7 +97,7 @@ export async function DELETE(request: NextRequest): Promise<Response> {
     .from("reviews")
     .delete()
     .eq("id", id)
-    .eq("user_id", user.id)
+    .eq("user_id", user.profileId)
     .select("id")
     .single();
   if (error || !data) return fail("Review not found", 404);

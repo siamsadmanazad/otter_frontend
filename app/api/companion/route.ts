@@ -87,9 +87,9 @@ export async function POST(request: NextRequest): Promise<Response> {
     const { data: followRows } = await db
       .from("follows")
       .select("following_id")
-      .eq("follower_id", user.id);
+      .eq("follower_id", user.profileId);
     const exclude = [
-      user.id,
+      user.profileId,
       ...((followRows ?? []) as { following_id: string }[]).map((r) => r.following_id),
     ];
 
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       reason: r.reason,
     }));
     await db.from("companion_requests").insert({
-      user_id: user.id,
+      user_id: user.profileId,
       destination: intake.destination ?? null,
       date_start: intake.dateStart ?? null,
       date_end: intake.dateEnd ?? null,

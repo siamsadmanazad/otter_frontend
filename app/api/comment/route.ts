@@ -63,7 +63,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const db = createAdminClient();
     const { data: comment, error } = await db
       .from("comments")
-      .insert({ owner_id: user.id, post_id: postId, content, parent_id: parentId })
+      .insert({ owner_id: user.profileId, post_id: postId, content, parent_id: parentId })
       .select(
         "id, content, created_at, updated_at, post_id, parent_id, like_count, down_count, reply_count, owner:profiles!comments_owner_id_fkey(id, username, full_name, profile_image)"
       )
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     if (post?.owner_id) {
       await db.rpc("create_notification", {
         p_recipient_id: post.owner_id,
-        p_actor_id: user.id,
+        p_actor_id: user.profileId,
         p_type: "COMMENT",
         p_target_type: "POST",
         p_target_id: postId,
@@ -96,10 +96,10 @@ export async function POST(request: NextRequest): Promise<Response> {
         .select("owner_id")
         .eq("id", comment.parent_id)
         .single();
-      if (parent?.owner_id && parent.owner_id !== user.id) {
+      if (parent?.owner_id && parent.owner_id !== user.profileId) {
         await db.rpc("create_notification", {
           p_recipient_id: parent.owner_id,
-          p_actor_id: user.id,
+          p_actor_id: user.profileId,
           p_type: "COMMENT_REPLY",
           p_target_type: "COMMENT",
           p_target_id: comment.parent_id,
@@ -128,7 +128,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
       .from("comments")
       .update({ content })
       .eq("id", id)
-      .eq("owner_id", user.id)
+      .eq("owner_id", user.profileId)
       .select(
         "id, content, created_at, updated_at, post_id, owner:profiles!comments_owner_id_fkey(id, username, full_name, profile_image)"
       )
@@ -154,7 +154,7 @@ export async function DELETE(request: NextRequest): Promise<Response> {
       .from("comments")
       .delete()
       .eq("id", id)
-      .eq("owner_id", user.id)
+      .eq("owner_id", user.profileId)
       .select("id, post_id")
       .single();
     if (error || !data) return fail("Comment not found", 404);

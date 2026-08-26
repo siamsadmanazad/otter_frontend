@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
     const { data: media, error: insErr } = await db
       .from("media")
       .insert({
-        owner_id: user.id,
+        owner_id: user.profileId,
         media_type: isVideo ? "VIDEO" : "IMAGE",
         bucket: BUCKET,
         path,
@@ -140,7 +140,7 @@ export async function DELETE(request: NextRequest) {
     .select("id, bucket, path, owner_id")
     .eq("id", id)
     .maybeSingle();
-  if (!media || media.owner_id !== user.id) {
+  if (!media || media.owner_id !== user.profileId) {
     return NextResponse.json({ error: "Media not found" }, { status: 404 });
   }
   await db.storage.from(media.bucket).remove([media.path]);

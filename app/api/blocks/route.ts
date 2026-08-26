@@ -17,7 +17,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       .select(
         "created_at, p:profiles!blocks_blocked_id_fkey(id, username, full_name, profile_image)"
       )
-      .eq("blocker_id", user.id)
+      .eq("blocker_id", user.profileId)
       .order("created_at", { ascending: false });
     if (error) return fail(error.message, 500);
 
@@ -43,13 +43,13 @@ export async function POST(request: NextRequest): Promise<Response> {
     const { targetUserId } = await request.json();
     if (!targetUserId?.trim() || !UUID_RE.test(targetUserId))
       return fail("A valid targetUserId is required", 400);
-    if (targetUserId === user.id) return fail("You can't block yourself", 400);
+    if (targetUserId === user.profileId) return fail("You can't block yourself", 400);
 
     const db = createAdminClient();
     const { error } = await db
       .from("blocks")
       .upsert(
-        { blocker_id: user.id, blocked_id: targetUserId },
+        { blocker_id: user.profileId, blocked_id: targetUserId },
         { onConflict: "blocker_id,blocked_id" }
       );
     if (error) return fail(error.message, 500);
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       .from("follows")
       .delete()
       .or(
-        `and(follower_id.eq.${user.id},following_id.eq.${targetUserId}),and(follower_id.eq.${targetUserId},following_id.eq.${user.id})`
+        `and(follower_id.eq.${user.profileId},following_id.eq.${targetUserId}),and(follower_id.eq.${targetUserId},following_id.eq.${user.profileId})`
       );
 
     return ok({ blocked: true }, "User blocked");
@@ -82,7 +82,7 @@ export async function DELETE(request: NextRequest): Promise<Response> {
     const { error } = await db
       .from("blocks")
       .delete()
-      .eq("blocker_id", user.id)
+      .eq("blocker_id", user.profileId)
       .eq("blocked_id", targetUserId);
     if (error) return fail(error.message, 500);
 

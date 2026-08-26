@@ -16,7 +16,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const { data } = await db
     .from("reports")
     .select("*")
-    .eq("reported_by", user.id)
+    .eq("reported_by", user.profileId)
     .order("created_at", { ascending: false });
   return ok(data ?? [], "Report fetched");
 }
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const { data, error } = await db
       .from("reports")
       .insert({
-        reported_by: user.id,
+        reported_by: user.profileId,
         reported_user: d.reportedUser ?? null,
         scope: d.scope,
         reason: d.reason,
@@ -64,7 +64,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
       .from("reports")
       .update({ status })
       .eq("id", id)
-      .eq("reported_by", user.id)
+      .eq("reported_by", user.profileId)
       .select("*")
       .single();
     if (error || !data) return fail("Report not found", 404);
@@ -86,7 +86,7 @@ export async function DELETE(request: NextRequest): Promise<Response> {
     .from("reports")
     .delete()
     .eq("id", id)
-    .eq("reported_by", user.id)
+    .eq("reported_by", user.profileId)
     .select("id")
     .single();
   if (error || !data) return fail("Report not found", 404);

@@ -149,7 +149,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const { data: inserted, error } = await db
       .from("posts")
       .insert({
-        owner_id: user.id,
+        owner_id: user.profileId,
         images,
         caption: caption ?? null,
         title: genre === "POST" ? (body.title as string).trim() : null,
@@ -195,7 +195,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
       .from("posts")
       .update(update)
       .eq("id", postId)
-      .eq("owner_id", user.id)
+      .eq("owner_id", user.profileId)
       .select("id")
       .single();
     if (error || !data) return fail("Post not found.", 404);
@@ -222,7 +222,7 @@ export async function DELETE(request: NextRequest): Promise<Response> {
       .from("posts")
       .delete()
       .eq("id", postId)
-      .eq("owner_id", user.id)
+      .eq("owner_id", user.profileId)
       .select("id")
       .single();
     if (error || !data) return fail("Post not found.", 404);

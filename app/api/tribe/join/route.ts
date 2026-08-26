@@ -29,7 +29,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   }
   try {
     const tribeRef = sp.get("tribeId") ?? "";
-    const userId = sp.get("userId") || user.id;
+    const userId = sp.get("userId") || user.profileId;
     const db = createAdminClient();
     const tribe = await resolveTribe(db, tribeRef);
     if (!tribe) return fail("Tribe not found", 404);
