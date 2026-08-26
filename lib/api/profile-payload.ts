@@ -52,15 +52,23 @@ export async function buildProfilePayload(
           .eq("profile_id", userId)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
+    // Business Mode Phase 6.3 (multi-location) -- ALL claimed places, not
+    // just one. A business claiming a second/third place was already
+    // possible (0.5 never capped it -- "capping claims per business" was
+    // explicitly logged as a future paid-tier lever, not a limit today);
+    // this is the first place that actually LISTS them. Ordered oldest-
+    // first so `places[0]` is a stable "primary" for existing UI that
+    // still only wants one (the composer's default map center, the
+    // completeness meter).
     isBusiness
       ? db
           .from("radar_places")
           .select("id, title, subtitle, lat, lng")
           .eq("owner_profile_id", userId)
           .eq("claim_status", "CLAIMED")
-          .limit(1)
-          .maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
+          .order("claimed_at", { ascending: true })
+          .limit(20)
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
   const countErrors = [posts.error, comments.error, followers.error, following.error].filter(Boolean);
@@ -73,8 +81,16 @@ export async function buildProfilePayload(
 
   const mapped = mapProfile(profile);
   const business = businessRow.data as Record<string, unknown> | null;
-  const place = placeRow.data as Record<string, unknown> | null;
+  const places = (placeRow.data ?? []) as Record<string, unknown>[];
+  const place = places[0] ?? null;
   const niche = business?.niche as Record<string, unknown> | null | undefined;
+  const mapPlace = (p: Record<string, unknown>) => ({
+    id: p.id,
+    title: p.title,
+    subtitle: p.subtitle,
+    lat: p.lat,
+    lng: p.lng,
+  });
   const body = {
     ...mapped,
     ...(allowed ? {} : { bio: "", location: "", socials: null, restricted: true }),
@@ -108,15 +124,12 @@ export async function buildProfilePayload(
                   iconKey: niche.icon_key,
                 }
               : null,
-            place: place
-              ? {
-                  id: place.id,
-                  title: place.title,
-                  subtitle: place.subtitle,
-                  lat: place.lat,
-                  lng: place.lng,
-                }
-              : null,
+            place: place ? mapPlace(place) : null,
+            // Phase 6.3 -- every claimed place, `places[0]` === `place`
+            // above (kept for the existing single-place UI). Always an
+            // array (possibly empty), never absent, so the client can
+            // check `places.length > 1` without a null check first.
+            places: places.map(mapPlace),
           },
         }
       : {}),
