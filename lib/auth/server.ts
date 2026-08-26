@@ -103,8 +103,23 @@ async function userFromBearerToken(token: string): Promise<ServerUser | null> {
   if (typeof sub !== "string" || !sub) return null;
 
   const email = typeof claims.email === "string" ? claims.email : null;
-  // profileId is inert (=== id) until Business Mode 0.2 — see ServerUser.profileId.
-  return { id: sub, profileId: sub, email };
+  return { id: sub, profileId: actingProfileFrom(claims, sub), email };
+}
+
+/**
+ * The acting profile carried by a verified token, else the caller's own id.
+ *
+ * `acting_profile` is stamped by the `custom_access_token_hook` Postgres
+ * function at mint time, which re-checks business_members before stamping —
+ * so by the time it reaches here it is already validated and signed. We do not
+ * re-authorize it: that is the whole reason the DB seam is a scalar
+ * (`current_profile_id()`) rather than a per-row capability check.
+ *
+ * Only trust this off a token whose signature has already been verified.
+ */
+function actingProfileFrom(claims: Record<string, unknown>, fallback: string): string {
+  const acting = claims.acting_profile;
+  return typeof acting === "string" && acting ? acting : fallback;
 }
 
 export async function getServerUser(req?: Request): Promise<ServerUser | null> {
@@ -114,10 +129,29 @@ export async function getServerUser(req?: Request): Promise<ServerUser | null> {
     return userFromBearerToken(authz.slice(7));
   }
 
-  // 2) Cookie session (web) — unchanged.
+  // 2) Cookie session (web).
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) return null;
-  // profileId is inert (=== id) until Business Mode 0.2 — see ServerUser.profileId.
-  return { id: data.user.id, profileId: data.user.id, email: data.user.email ?? null };
+
+  // getUser() returns the user record, which does NOT carry custom claims — so
+  // read acting_profile off the session's access token. Verified locally via the
+  // same JWKS path as the Bearer branch; on any doubt we fall back to the user's
+  // own id, which is the safe direction (their own profile, never someone else's).
+  let profileId = data.user.id;
+  try {
+    const { data: s } = await supabase.auth.getSession();
+    const token = s.session?.access_token;
+    if (token) {
+      const { data: c, error: cErr } = await getVerifier().auth.getClaims(token);
+      const claims = c?.claims as Record<string, unknown> | undefined;
+      if (!cErr && claims && claims.iss === EXPECTED_ISSUER && claims.sub === data.user.id) {
+        profileId = actingProfileFrom(claims, data.user.id);
+      }
+    }
+  } catch {
+    // keep the fallback
+  }
+
+  return { id: data.user.id, profileId, email: data.user.email ?? null };
 }
