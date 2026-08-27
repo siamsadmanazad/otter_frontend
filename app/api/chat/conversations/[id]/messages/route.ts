@@ -485,12 +485,33 @@ export async function POST(
     const { data: story, error: storyErr } = await db
       .from("stories")
       .select(
-        `id, author_profile_id, media_url, alt_text, expires_at, highlighted_at, author:profiles!stories_author_profile_id_fkey(username, full_name, profile_image), place:radar_places!stories_place_id_fkey(title), tribe:tribes!stories_tribe_id_fkey(name)` as const
+        `id, author_profile_id, media_url, alt_text, expires_at, highlighted_at, audience_mode, audience_snapshot, author:profiles!stories_author_profile_id_fkey(username, full_name, profile_image), place:radar_places!stories_place_id_fkey(title), tribe:tribes!stories_tribe_id_fkey(name)` as const
       )
       .eq("id", storyId)
       .maybeSingle();
     if (storyErr) console.error("[chat] story resolve error:", storyErr.message);
     if (!story) return fail("That story is no longer available", 400);
+    // stories.md 7.5 (audience leak audit) — RLS above only proves the
+    // SENDER can currently see this story; it says nothing about the
+    // RECIPIENT. Without this check, a FOLLOWERS/GROUP-restricted story's
+    // real media_url gets baked into the message attachment (below) and
+    // rendered to whoever the sender picks, forever, regardless of whether
+    // that person is actually inside the story's own audience — "audience
+    // beats discovery" applied to every OTHER surface in this feature, but
+    // not, until now, to a DM forward. EVERYONE-mode stories (the common
+    // case) skip this entirely: nobody is ever restricted from receiving
+    // those, so there's nothing to check.
+    if (story.audience_mode !== "EVERYONE") {
+      const peerId = await getDirectPeerId(db, id, me.id);
+      const { data: allowed, error: allowErr } = await db.rpc("audience_allows", {
+        p_mode: story.audience_mode,
+        p_owner: story.author_profile_id,
+        p_members: story.audience_snapshot,
+        p_viewer: peerId,
+      });
+      if (allowErr) return fail(allowErr.message, 500);
+      if (!allowed) return fail("This story can't be shared with that person", 403);
+    }
     const author = (Array.isArray(story.author) ? story.author[0] : story.author) as
       | { username?: string; full_name?: string; profile_image?: string }
       | null;
