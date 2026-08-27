@@ -27,19 +27,32 @@ function derivePathFromUrl(url: string): string | null {
 }
 
 // GET /api/stories?tray=1[&limit=] -> story_tray()
+// GET /api/stories?author=<uuid> -> story_segments() (Phase 2, the viewer's
+// data source) -- one author's live segments in playback order.
 export async function GET(request: NextRequest): Promise<Response> {
   try {
     const user = await getServerUser(request);
     if (!user) return fail("Unauthorized", 401);
 
     const sp = request.nextUrl.searchParams;
-    if (sp.get("tray") !== "1") return fail("Unsupported query", 400);
-
-    const limit = Math.min(60, Math.max(1, parseInt(sp.get("limit") || "30", 10)));
     const supabase = await createActorClient(request);
-    const { data, error } = await supabase.rpc("story_tray", { p_limit: limit });
-    if (error) return fail(error.message, 500);
-    return ok(data ?? [], "Tray retrieved");
+
+    if (sp.get("tray") === "1") {
+      const limit = Math.min(60, Math.max(1, parseInt(sp.get("limit") || "30", 10)));
+      const { data, error } = await supabase.rpc("story_tray", { p_limit: limit });
+      if (error) return fail(error.message, 500);
+      return ok(data ?? [], "Tray retrieved");
+    }
+
+    const author = sp.get("author");
+    if (author) {
+      if (!UUID_RE.test(author)) return fail("Invalid author ID", 400);
+      const { data, error } = await supabase.rpc("story_segments", { p_author: author });
+      if (error) return fail(error.message, 500);
+      return ok(data ?? [], "Segments retrieved");
+    }
+
+    return fail("Unsupported query", 400);
   } catch (e) {
     console.error("GET /api/stories error:", e);
     return fail("Internal server error", 500);
