@@ -33,6 +33,21 @@ export interface ChatAttachment {
   /** B7 — "location"-type only: a precise device-GPS pin, never fuzzed. */
   lat?: number;
   lng?: number;
+  /**
+   * stories.md 4.2/4.4 -- "story"-type only. A frozen snapshot resolved
+   * server-side from the `stories` row at send time (never trust a
+   * client-supplied mediaUrl/authorName -- see the messages route's
+   * resolveStoryAttachment), never re-fetched afterward. mediaUrl is already
+   * a public URL (stories never sign), unlike `url` above.
+   */
+  storyId?: string;
+  mediaUrl?: string;
+  altText?: string;
+  authorId?: string;
+  authorName?: string;
+  authorImage?: string;
+  placeTitle?: string;
+  tribeName?: string;
   [key: string]: unknown;
 }
 
@@ -170,6 +185,10 @@ export async function resolveAttachmentsForMessages<
 }
 
 export const EXPIRED_VOICE_TEXT = "[voice message expired]";
+// stories.md Phase 4.3 (Appendix A) -- a quoted story shares the exact same
+// expires_at + lazy/cron purge mechanism as a voice note, but needs its own
+// copy: "the message survives, the media does not."
+export const EXPIRED_STORY_TEXT = "This story has expired.";
 
 /**
  * Lazy purge (the primary TTL mechanism — see the pg_cron migration for the
@@ -194,9 +213,11 @@ export async function purgeExpiredVoiceRows(
   await persistExpiredVoicePurge(admin, maskExpiredVoiceRows(rows));
 }
 
-/** What [maskExpiredVoiceRows] found: the message ids to strip and the blobs to drop. */
+/** What [maskExpiredVoiceRows] found: the message ids to strip (split by which
+ *  canned copy they need) and the blobs to drop. */
 export interface ExpiredVoicePurge {
   ids: string[];
+  storyIds: string[];
   paths: string[];
 }
 
@@ -219,23 +240,34 @@ export function maskExpiredVoiceRows(
   rows: Array<Record<string, any>>
 ): ExpiredVoicePurge {
   const now = Date.now();
+  // Guard on attachments still being present, not a content-string comparison
+  // -- once purged, attachments become [] regardless of which canned string
+  // was written, so that alone is idempotent for BOTH message kinds below.
   const expired = rows.filter(
     (r) =>
-      r.content !== EXPIRED_VOICE_TEXT &&
+      Array.isArray(r.attachments) &&
+      r.attachments.length > 0 &&
       ((r.expires_at && new Date(r.expires_at).getTime() < now) ||
         (r.listen_once && r.voice_played_at))
   );
   const ids: string[] = [];
+  const storyIds: string[] = [];
   const paths: string[] = [];
   for (const r of expired) {
     ids.push(r.id as string);
+    // stories.md 4.3: a story-quote attachment is a frozen snapshot (no
+    // storage path of its own -- the story's own media_url), never a blob
+    // this route owns, so only voice/file/image attachments contribute a
+    // path to delete here.
+    const isStory = (r.attachments as ChatAttachment[])[0]?.type === "story";
+    if (isStory) storyIds.push(r.id as string);
     for (const a of (r.attachments ?? []) as ChatAttachment[]) {
       if (a?.path) paths.push(a.path);
     }
-    r.content = EXPIRED_VOICE_TEXT;
+    r.content = isStory ? EXPIRED_STORY_TEXT : EXPIRED_VOICE_TEXT;
     r.attachments = [];
   }
-  return { ids, paths };
+  return { ids, storyIds, paths };
 }
 
 /**
@@ -252,8 +284,24 @@ export async function persistExpiredVoicePurge(
   if (purge.paths.length) {
     await admin.storage.from(CHAT_ATTACHMENTS_BUCKET).remove(purge.paths);
   }
-  await admin
-    .from("messages")
-    .update({ content: EXPIRED_VOICE_TEXT, attachments: [] })
-    .in("id", purge.ids);
+  // Split by canned copy (stories.md 4.3) -- writing EXPIRED_VOICE_TEXT over
+  // an expired story-quote row here would only get fixed an hour later by
+  // the pg_cron backstop, so this must branch too, not just the in-memory
+  // mask above.
+  const storySet = new Set(purge.storyIds);
+  const voiceIds = purge.ids.filter((id) => !storySet.has(id));
+  await Promise.all([
+    voiceIds.length
+      ? admin
+          .from("messages")
+          .update({ content: EXPIRED_VOICE_TEXT, attachments: [] })
+          .in("id", voiceIds)
+      : Promise.resolve(),
+    purge.storyIds.length
+      ? admin
+          .from("messages")
+          .update({ content: EXPIRED_STORY_TEXT, attachments: [] })
+          .in("id", purge.storyIds)
+      : Promise.resolve(),
+  ]);
 }

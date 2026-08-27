@@ -168,6 +168,27 @@ export async function GET(request: NextRequest): Promise<Response> {
   const blockedIds = new Set(await blockedIdsPromise);
   timer.mark("blockedPairs");
 
+  // stories.md 4.1 — which DIRECT peers currently have an unseen live story,
+  // for the chat-list ring. ONE batched RPC for the whole page (never
+  // per-conversation) — same discipline as story_tray()/story_segments().
+  const directOtherIds = new Set<string>();
+  for (const c of (convs ?? []) as any[]) {
+    if (c.type !== "DIRECT") continue;
+    for (const p of byConv.get(c.id) ?? []) {
+      if (p.user_id !== me.id) directOtherIds.add(p.user_id);
+    }
+  }
+  const storyRingByAuthor = new Set<string>();
+  if (directOtherIds.size) {
+    const { data: liveRows } = await db.rpc("story_live_status", {
+      p_authors: [...directOtherIds],
+    });
+    for (const r of liveRows ?? []) {
+      if (r.has_unseen) storyRingByAuthor.add(r.author_id);
+    }
+  }
+  timer.mark("storyRings");
+
   // A DIRECT conversation with no resolvable peer (the other participant row
   // is missing, or its profile failed to join) is dead data — surfacing it
   // renders as an unopenable "Conversation" row with a blank avatar. Drop it
@@ -225,6 +246,9 @@ export async function GET(request: NextRequest): Promise<Response> {
       muted: mutedByConv.get(c.id) ?? false,
       pinnedAt: pinnedAtByConv.get(c.id) ?? null,
       blocked: other ? blockedIds.has(other.id) : false,
+      // stories.md 4.1 — a live, unseen story on this DIRECT peer. Never set
+      // for a group conversation (there's no single "the peer" to ring).
+      storyRing: other ? storyRingByAuthor.has(other.id) : false,
       lastMessage,
       lastMessageAt: c.last_message_at,
       unread,

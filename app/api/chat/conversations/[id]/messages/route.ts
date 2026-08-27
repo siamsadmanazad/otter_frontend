@@ -96,6 +96,17 @@ function sanitizeAttachments(input: unknown): Record<string, unknown>[] {
         const userId = (a as Record<string, unknown>).userId;
         return typeof userId === "string" && UUID_RE.test(userId);
       }
+      if (type === "story") {
+        // stories.md 4.2/4.4 — a fourth shape: like "contact", the client
+        // sends only the id; UNLIKE contact, the server snapshots the
+        // display fields ONCE at send time (resolveStoryAttachment, below)
+        // rather than re-resolving them live on every read — the whole point
+        // being that the message must survive the story's own expiry with
+        // its own frozen copy, not a dangling reference to a row whose media
+        // has since been stripped.
+        const storyId = (a as Record<string, unknown>).storyId;
+        return typeof storyId === "string" && UUID_RE.test(storyId);
+      }
       if (type === "poll") {
         const q = (a as Record<string, unknown>).question;
         return (
@@ -139,6 +150,8 @@ function sanitizeAttachments(input: unknown): Record<string, unknown>[] {
     .map((a) =>
       a.type === "contact"
         ? { type: a.type, userId: a.userId }
+        : a.type === "story"
+        ? { type: a.type, storyId: a.storyId }
         : a.type === "poll"
         ? {
             type: a.type,
@@ -456,10 +469,62 @@ export async function POST(
     };
   }
 
+  // Story quotes (stories.md 4.2/4.4): resolve + snapshot server-side, ONCE,
+  // right now — never trust a client-supplied mediaUrl/authorName the way a
+  // forged card could smuggle in. RLS (stories_select_visible) IS the entire
+  // visibility check here: a story the sender can't currently see (wrong
+  // audience, expired, deleted) resolves to no row and the send is rejected
+  // — the exact same shape as a reply target that isn't in this conversation.
+  let storyExpiresAt: string | null = null;
+  if (attachments[0]?.type === "story") {
+    const storyId = attachments[0].storyId as string;
+    // A template literal (not string concatenation) so postgrest-js's
+    // generic select-string parser can statically resolve the embed shape
+    // instead of falling back to GenericStringError — same reason
+    // MESSAGE_COLUMNS above is built with `as const`.
+    const { data: story, error: storyErr } = await db
+      .from("stories")
+      .select(
+        `id, author_profile_id, media_url, alt_text, expires_at, highlighted_at, author:profiles!stories_author_profile_id_fkey(username, full_name, profile_image), place:radar_places!stories_place_id_fkey(title), tribe:tribes!stories_tribe_id_fkey(name)` as const
+      )
+      .eq("id", storyId)
+      .maybeSingle();
+    if (storyErr) console.error("[chat] story resolve error:", storyErr.message);
+    if (!story) return fail("That story is no longer available", 400);
+    const author = (Array.isArray(story.author) ? story.author[0] : story.author) as
+      | { username?: string; full_name?: string; profile_image?: string }
+      | null;
+    const place = (Array.isArray(story.place) ? story.place[0] : story.place) as
+      | { title?: string }
+      | null;
+    const tribe = (Array.isArray(story.tribe) ? story.tribe[0] : story.tribe) as
+      | { name?: string }
+      | null;
+    attachments[0] = {
+      type: "story",
+      storyId: story.id,
+      mediaUrl: story.media_url,
+      altText: story.alt_text ?? undefined,
+      authorId: story.author_profile_id,
+      authorName: author?.full_name || author?.username || undefined,
+      authorImage: author?.profile_image ?? undefined,
+      placeTitle: place?.title ?? undefined,
+      tribeName: tribe?.name ?? undefined,
+    };
+    // A highlight (Phase 5, not shipped yet) never expires, so the quote
+    // shouldn't either — every LIVE story today always has a real
+    // expires_at, so this branch is dead code until Phase 5 ships, kept
+    // here rather than left as a gap that would silently mis-expire a kept
+    // story's quote later.
+    storyExpiresAt = story.highlighted_at ? null : story.expires_at;
+  }
+
   // Voice notes are ephemeral: 24h from send, enforced both by the lazy
   // purge-on-read above and the pg_cron backstop.
   const hasVoice = attachments.some((a) => a.type === "voice");
-  const expiresAt = hasVoice ? new Date(Date.now() + VOICE_TTL_MS).toISOString() : null;
+  const expiresAt = hasVoice
+    ? new Date(Date.now() + VOICE_TTL_MS).toISOString()
+    : storyExpiresAt;
   // Listen-once (V2): sender opts in per message, at send time. Meaningless
   // without a voice attachment, so silently ignored on a text-only send
   // rather than erroring over a client bug that can't affect anything.
