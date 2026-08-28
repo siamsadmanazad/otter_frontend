@@ -137,6 +137,9 @@ export async function POST(request: NextRequest): Promise<Response> {
       // Phase 7 -- present only when the recording was started in "follow a
       // route" mode. Absent for every ordinary recording.
       p_route_id: typeof body.routeId === "string" ? body.routeId : null,
+      // Phase 10 -- how many fixes the device's OS flagged as mock-location
+      // (Android only; see save_activity()'s own comment on the iOS gap).
+      p_mocked_fix_count: num(body.mockedFixCount) ?? 0,
     });
     if (error) return fail(error.message, 500);
 
