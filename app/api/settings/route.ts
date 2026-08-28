@@ -104,5 +104,21 @@ export async function PATCH(request: NextRequest): Promise<Response> {
     .eq("id", user.profileId);
   if (writeErr) return fail(writeErr.message, 500);
 
+  // gamify.md §35 Early Bird -- fires exactly once, on the false->true edge
+  // of onboarding completion. award_badge()'s own unique(user_id,badge_key)
+  // gate makes this safe even if called twice, but the edge check avoids an
+  // RPC on every unrelated settings PATCH once onboarding is already done.
+  const wasOnboarded = withDefaults(current?.preferences).onboarding.completed;
+  if (!wasOnboarded && merged.onboarding.completed) {
+    await db.rpc("trails_award_xp", { p_uid: user.profileId, p_xp: 100 });
+    await db.rpc("award_badge", {
+      p_uid: user.profileId,
+      p_badge_key: "early_bird",
+      p_meta: {},
+      p_reward_minor: 500,
+      p_note: "Completed onboarding",
+    });
+  }
+
   return ok({ preferences: merged }, "Preferences saved");
 }
