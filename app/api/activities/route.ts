@@ -137,7 +137,10 @@ export async function POST(request: NextRequest): Promise<Response> {
     });
     if (error) return fail(error.message, 500);
 
-    return ok({ id: data }, "Activity saved");
+    // save_activity() now returns {id, xpAwarded, xpTotal, level, levelLabel,
+    // leveledUp, badgesAwarded} directly (Phase 4) -- pass it straight
+    // through rather than re-wrapping just the id.
+    return ok(data, "Activity saved");
   } catch (e) {
     console.error("POST /api/activities error:", e);
     return fail("Internal server error", 500);
