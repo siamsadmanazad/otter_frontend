@@ -134,6 +134,9 @@ export async function POST(request: NextRequest): Promise<Response> {
       p_note: typeof body.note === "string" ? body.note.slice(0, 2000) : null,
       p_visibility: visibility,
       p_h3_coarse: typeof body.h3Coarse === "string" ? body.h3Coarse : null,
+      // Phase 7 -- present only when the recording was started in "follow a
+      // route" mode. Absent for every ordinary recording.
+      p_route_id: typeof body.routeId === "string" ? body.routeId : null,
     });
     if (error) return fail(error.message, 500);
 
