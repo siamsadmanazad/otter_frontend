@@ -271,7 +271,7 @@ export async function GET(
     .from("conversation_participants")
     .select("user_id, cleared_at")
     .eq("conversation_id", id)
-    .eq("user_id", me.id)
+    .eq("user_id", me.profileId)
     .maybeSingle();
   timer.mark("participantRow");
   if (!meRow) {
@@ -350,7 +350,7 @@ export async function GET(
     const byEmoji = bucket.get(r.message_id) ?? new Map();
     const cur = byEmoji.get(r.emoji) ?? { count: 0, mine: false };
     cur.count += 1;
-    if (r.user_id === me.id) cur.mine = true;
+    if (r.user_id === me.profileId) cur.mine = true;
     byEmoji.set(r.emoji, cur);
     bucket.set(r.message_id, byEmoji);
   }
@@ -371,7 +371,7 @@ export async function GET(
     const cur = byOpt.get(v.option_index) ?? { count: 0, mine: false, voterIds: [] };
     cur.count += 1;
     cur.voterIds.push(v.user_id);
-    if (v.user_id === me.id) cur.mine = true;
+    if (v.user_id === me.profileId) cur.mine = true;
     byOpt.set(v.option_index, cur);
     votesByMsg.set(v.message_id, byOpt);
   }
@@ -405,7 +405,7 @@ export async function GET(
         m,
         reactionsByMsg.get(m.id) ?? [],
         m.reply_to_id ? replyById.get(m.reply_to_id) ?? null : null,
-        me.id
+        me.profileId
       )
     )
     .reverse();
@@ -435,9 +435,9 @@ export async function POST(
 
   const { id } = await params;
   const db = await createActorClient(request);
-  if (!(await isParticipant(db, id, me.id)))
+  if (!(await isParticipant(db, id, me.profileId)))
     return fail("Not a participant of this conversation", 403);
-  if (await isBlockedInConversation(db, id, me.id))
+  if (await isBlockedInConversation(db, id, me.profileId))
     return fail("You can't message this conversation", 403);
 
   const body = await request.json().catch(() => ({}));
@@ -502,7 +502,7 @@ export async function POST(
     // case) skip this entirely: nobody is ever restricted from receiving
     // those, so there's nothing to check.
     if (story.audience_mode !== "EVERYONE") {
-      const peerId = await getDirectPeerId(db, id, me.id);
+      const peerId = await getDirectPeerId(db, id, me.profileId);
       const { data: allowed, error: allowErr } = await db.rpc("audience_allows", {
         p_mode: story.audience_mode,
         p_owner: story.author_profile_id,
@@ -558,7 +558,7 @@ export async function POST(
     .from("messages")
     .insert({
       conversation_id: id,
-      sender_id: me.id,
+      sender_id: me.profileId,
       content: content ?? null,
       attachments,
       reply_to_id: replyToId,
@@ -577,7 +577,7 @@ export async function POST(
     .eq("id", id);
 
   const admin = createAdminClient();
-  const mapped = mapMessage(inserted, [], reply, me.id);
+  const mapped = mapMessage(inserted, [], reply, me.profileId);
 
   // V3 — the ring itself is a one-shot Realtime Broadcast to the recipient's
   // personal channel, never persisted: whichever of their devices happen to
@@ -589,7 +589,7 @@ export async function POST(
   // never fail the send itself.
   if (isCall) {
     try {
-      const peerId = await getDirectPeerId(db, id, me.id);
+      const peerId = await getDirectPeerId(db, id, me.profileId);
       if (peerId) {
         const { data: peerRow } = await admin
           .from("conversation_participants")
@@ -601,7 +601,7 @@ export async function POST(
           await admin.channel(`calls:${peerId}`).httpSend("incoming_call", {
             conversationId: id,
             messageId: inserted.id,
-            callerId: me.id,
+            callerId: me.profileId,
             callerName: mapped.sender?.fullName ?? mapped.sender?.username ?? "Someone",
             callerImage: mapped.sender?.profileImage ?? null,
             durationSeconds: attachments[0]?.duration ?? null,

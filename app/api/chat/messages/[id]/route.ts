@@ -48,7 +48,7 @@ export async function PATCH(
     .select("id, sender_id, created_at, deleted_at")
     .eq("id", id)
     .maybeSingle();
-  if (!existing || existing.sender_id !== me.id)
+  if (!existing || existing.sender_id !== me.profileId)
     return fail("Message not found or not yours", 404);
   if (existing.deleted_at) return fail("Cannot edit a deleted message", 400);
   if (Date.now() - new Date(existing.created_at).getTime() > EDIT_WINDOW_MS)
@@ -58,7 +58,7 @@ export async function PATCH(
     .from("messages")
     .update({ content, edited_at: new Date().toISOString() })
     .eq("id", id)
-    .eq("sender_id", me.id)
+    .eq("sender_id", me.profileId)
     .select(SELECT)
     .single();
   if (error || !data) return fail(error?.message || "Failed to edit", 500);
@@ -81,7 +81,7 @@ export async function DELETE(
     .select("id, sender_id, created_at, deleted_at")
     .eq("id", id)
     .maybeSingle();
-  if (!existing || existing.sender_id !== me.id)
+  if (!existing || existing.sender_id !== me.profileId)
     return fail("Message not found or not yours", 404);
   if (existing.deleted_at) return ok({ id }, "Already deleted");
   if (Date.now() - new Date(existing.created_at).getTime() > DELETE_WINDOW_MS)
@@ -91,7 +91,7 @@ export async function DELETE(
     .from("messages")
     .update({ deleted_at: new Date().toISOString() })
     .eq("id", id)
-    .eq("sender_id", me.id)
+    .eq("sender_id", me.profileId)
     .is("deleted_at", null)
     .select("id")
     .maybeSingle();

@@ -37,7 +37,7 @@ export async function POST(
 
   const { id, messageId } = await params;
   const db = await createActorClient(request);
-  if (!(await isParticipant(db, id, me.id)))
+  if (!(await isParticipant(db, id, me.profileId)))
     return fail("Not a participant of this conversation", 403);
 
   const { data: msg } = await db
@@ -58,7 +58,7 @@ export async function POST(
     return fail("This voice message is no longer available", 410);
 
   const admin = createAdminClient();
-  const isSender = msg.sender_id === me.id;
+  const isSender = msg.sender_id === me.profileId;
 
   if (!isSender) {
     if (msg.voice_played_at) {
@@ -68,7 +68,7 @@ export async function POST(
     // update, so two concurrent requests (retry, double-tap) can't both win.
     const { data: consumed, error: consumeError } = await admin
       .from("messages")
-      .update({ voice_played_at: new Date().toISOString(), voice_played_by: me.id })
+      .update({ voice_played_at: new Date().toISOString(), voice_played_by: me.profileId })
       .eq("id", messageId)
       .is("voice_played_at", null)
       .select("id")

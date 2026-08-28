@@ -38,7 +38,7 @@ export async function GET(
       .from("messages")
       .select("id, created_at")
       .eq("conversation_id", id)
-      .eq("sender_id", me.id)
+      .eq("sender_id", me.profileId)
       .order("created_at", { ascending: false })
       .limit(200),
   ]);
@@ -48,11 +48,11 @@ export async function GET(
     timer.finish({ result: "500" });
     return fail(pErr.message, 500);
   }
-  if (!(parts ?? []).some((p: any) => p.user_id === me.id)) {
+  if (!(parts ?? []).some((p: any) => p.user_id === me.profileId)) {
     timer.finish({ result: "403" });
     return fail("Not a participant of this conversation", 403);
   }
-  const peer = (parts ?? []).find((p: any) => p.user_id !== me.id);
+  const peer = (parts ?? []).find((p: any) => p.user_id !== me.profileId);
   if (!peer) {
     timer.finish({ result: "no-peer" });
     return ok({ peerId: null, peerDeliveredAt: null, peerReadAt: null }, "No peer");

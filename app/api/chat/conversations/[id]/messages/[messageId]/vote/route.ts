@@ -46,7 +46,7 @@ export async function POST(
 
   try {
     const db = await createActorClient(request);
-    if (!(await isParticipant(db, id, me.id)))
+    if (!(await isParticipant(db, id, me.profileId)))
       return fail("Not a participant", 403);
 
     // Confirm the target really is a poll in THIS conversation before writing —
@@ -69,12 +69,12 @@ export async function POST(
       .from("message_poll_votes")
       .delete()
       .eq("message_id", messageId)
-      .eq("user_id", me.id);
+      .eq("user_id", me.profileId);
 
     if (optionIndex !== null) {
       const { error } = await db
         .from("message_poll_votes")
-        .insert({ message_id: messageId, user_id: me.id, option_index: optionIndex });
+        .insert({ message_id: messageId, user_id: me.profileId, option_index: optionIndex });
       if (error) return fail(error.message, 500);
     }
 

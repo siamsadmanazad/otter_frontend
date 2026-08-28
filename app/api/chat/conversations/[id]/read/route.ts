@@ -32,14 +32,14 @@ export async function POST(
       .from("conversation_participants")
       .select("user_id")
       .eq("conversation_id", id)
-      .eq("user_id", me.id)
+      .eq("user_id", me.profileId)
       .maybeSingle(),
     // Most recent inbound messages (bounded) that the caller hasn't read yet.
     db
       .from("messages")
       .select("id")
       .eq("conversation_id", id)
-      .neq("sender_id", me.id)
+      .neq("sender_id", me.profileId)
       .order("created_at", { ascending: false })
       .limit(200),
   ]);
@@ -57,13 +57,13 @@ export async function POST(
   const { data: already } = await db
     .from("message_reads")
     .select("message_id")
-    .eq("user_id", me.id)
+    .eq("user_id", me.profileId)
     .in("message_id", inboundIds);
   timer.mark("already");
   const readSet = new Set((already ?? []).map((r: any) => r.message_id));
   const toInsert = inboundIds
     .filter((mid: string) => !readSet.has(mid))
-    .map((mid: string) => ({ message_id: mid, user_id: me.id }));
+    .map((mid: string) => ({ message_id: mid, user_id: me.profileId }));
 
   if (toInsert.length === 0) {
     timer.finish({ marked: 0 });

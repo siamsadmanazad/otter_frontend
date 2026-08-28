@@ -43,16 +43,16 @@ export async function GET(request: NextRequest): Promise<Response> {
   }
   const db = await createActorClient(request);
 
-  // Depends only on me.id, so it rides alongside round A instead of tailing the
+  // Depends only on me.profileId, so it rides alongside round A instead of tailing the
   // whole waterfall (it used to be the LAST await in the route).
-  const blockedIdsPromise = getBlockedPairIds(db, me.id);
+  const blockedIdsPromise = getBlockedPairIds(db, me.profileId);
 
   const filter = request.nextUrl.searchParams.get("filter") ?? "inbox";
   // Round A — nothing else can start until we know which conversations are mine.
   const { data: myRows } = await db
     .from("conversation_participants")
     .select("conversation_id, accepted, archived, muted, pinned_at")
-    .eq("user_id", me.id);
+    .eq("user_id", me.profileId);
   timer.mark("myRows");
   const convIds = (myRows ?? [])
     .filter((r: any) => {
@@ -141,7 +141,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     lastMsgs.push(msg);
     lastMsgById.set(msg.id, msg);
     for (const r of (message_reads ?? []) as { user_id: string }[]) {
-      if (r.user_id === me.id) readSet.add(msg.id);
+      if (r.user_id === me.profileId) readSet.add(msg.id);
       const set = readersByMsg.get(msg.id) ?? new Set<string>();
       set.add(r.user_id);
       readersByMsg.set(msg.id, set);
@@ -175,7 +175,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   for (const c of (convs ?? []) as any[]) {
     if (c.type !== "DIRECT") continue;
     for (const p of byConv.get(c.id) ?? []) {
-      if (p.user_id !== me.id) directOtherIds.add(p.user_id);
+      if (p.user_id !== me.profileId) directOtherIds.add(p.user_id);
     }
   }
   const storyRingByAuthor = new Set<string>();
@@ -199,13 +199,13 @@ export async function GET(request: NextRequest): Promise<Response> {
     const members = (byConv.get(c.id) ?? []).map((p: any) => mapUser(p.profile));
     const other =
       c.type === "DIRECT"
-        ? members.find((u: any) => u && u.id !== me.id) ?? null
+        ? members.find((u: any) => u && u.id !== me.profileId) ?? null
         : null;
     const last = c.last_message_id ? lastMsgById.get(c.last_message_id) : null;
 
     // Delivered/seen status for MY OWN last message (DIRECT only — a single peer).
     let status: "sent" | "delivered" | "seen" | undefined;
-    if (last && last.sender_id === me.id && other?.id) {
+    if (last && last.sender_id === me.profileId && other?.id) {
       const seenByPeer = readersByMsg.get(last.id)?.has(other.id) ?? false;
       const peerDeliveredAt = deliveredAtByConvUser.get(c.id)?.get(other.id);
       if (seenByPeer) status = "seen";
@@ -233,7 +233,7 @@ export async function GET(request: NextRequest): Promise<Response> {
         }
       : null;
     const unread =
-      !!last && last.sender_id !== me.id && !readSet.has(last.id);
+      !!last && last.sender_id !== me.profileId && !readSet.has(last.id);
     return {
       id: c.id,
       serial: c.serial,
@@ -279,7 +279,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const body = await request.json().catch(() => ({}));
   const targetId: string | undefined = body.userId;
   if (!targetId) return fail("userId is required", 400);
-  if (targetId === me.id) return fail("Cannot start a chat with yourself", 400);
+  if (targetId === me.profileId) return fail("Cannot start a chat with yourself", 400);
 
   const db = createAdminClient();
 
@@ -291,7 +291,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (!target) return fail("User not found", 404);
 
   // Can't start a chat across a block (either direction).
-  if (await isBlockedPair(db, me.id, targetId))
+  if (await isBlockedPair(db, me.profileId, targetId))
     return fail("You can't message this account", 403);
 
   // Enforce the target's who-can-message privacy preference. Read it defensively so
@@ -314,7 +314,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       .from("follows")
       .select("follower_id")
       .eq("follower_id", targetId)
-      .eq("following_id", me.id)
+      .eq("following_id", me.profileId)
       .maybeSingle();
     if (!rel)
       return fail("Only people this user follows can message them", 403);
@@ -324,7 +324,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const { data: mine } = await db
     .from("conversation_participants")
     .select("conversation_id")
-    .eq("user_id", me.id);
+    .eq("user_id", me.profileId);
   const { data: theirs } = await db
     .from("conversation_participants")
     .select("conversation_id")
@@ -349,7 +349,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (!conversationId) {
     const { data: created, error: cErr } = await db
       .from("conversations")
-      .insert({ type: "DIRECT", created_by: me.id })
+      .insert({ type: "DIRECT", created_by: me.profileId })
       .select("id")
       .single();
     if (cErr || !created) return fail(cErr?.message || "Failed to create", 500);
@@ -357,7 +357,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const { error: pErr } = await db
       .from("conversation_participants")
       .insert([
-        { conversation_id: conversationId, user_id: me.id },
+        { conversation_id: conversationId, user_id: me.profileId },
         { conversation_id: conversationId, user_id: targetId },
       ]);
     if (pErr) return fail(pErr.message, 500);
@@ -369,7 +369,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       type: "DIRECT",
       otherUser: mapUser(target as Profile),
       members: [
-        { id: me.id },
+        { id: me.profileId },
         mapUser(target as Profile),
       ],
       lastMessage: null,

@@ -30,13 +30,13 @@ export async function POST(
     .select("conversation_id")
     .eq("id", id)
     .maybeSingle();
-  if (msg && (await isBlockedInConversation(db, msg.conversation_id, me.id)))
+  if (msg && (await isBlockedInConversation(db, msg.conversation_id, me.profileId)))
     return fail("You can't react in this conversation", 403);
 
   const { error } = await db
     .from("message_reactions")
     .upsert(
-      { message_id: id, user_id: me.id, emoji },
+      { message_id: id, user_id: me.profileId, emoji },
       { onConflict: "message_id,user_id,emoji" }
     );
   if (error) return fail(error.message, 500);
@@ -59,7 +59,7 @@ export async function DELETE(
     .from("message_reactions")
     .delete()
     .eq("message_id", id)
-    .eq("user_id", me.id)
+    .eq("user_id", me.profileId)
     .eq("emoji", emoji);
   if (error) return fail(error.message, 500);
   return ok({ messageId: id, emoji }, "Reaction removed");
