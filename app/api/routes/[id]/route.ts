@@ -18,7 +18,12 @@ export async function GET(
     if (error) return fail(error.message, 500);
     if (!data) return fail("Route not found", 404);
 
-    return ok(data, "Route retrieved");
+    // Phase 9 -- fold in the (usually zero-or-one) segments derived from this
+    // route, so the client can offer "View leaderboard" without a second
+    // round trip. A failure here is non-fatal -- the route itself still loaded.
+    const { data: segments } = await supabase.rpc("segments_for_route", { p_route_id: id });
+
+    return ok({ ...data, segments: segments ?? [] }, "Route retrieved");
   } catch (e) {
     console.error("GET /api/routes/[id] error:", e);
     return fail("Internal server error", 500);
