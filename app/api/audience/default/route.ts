@@ -8,7 +8,7 @@ import { ok, fail } from "@/lib/api/http";
 // audience costs zero taps (stories.md 1.5).
 
 const CONTENT_TYPES = new Set(["STORY", "POST"]);
-const MODES = new Set(["EVERYONE", "FOLLOWERS", "GROUP"]);
+const MODES = new Set(["EVERYONE", "FOLLOWERS", "GROUP", "ONLY_ME"]);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // GET /api/audience/default?type=STORY -> get_audience_default()

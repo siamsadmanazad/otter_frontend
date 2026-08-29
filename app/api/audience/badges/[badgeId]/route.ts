@@ -10,7 +10,7 @@ import { ok, fail } from "@/lib/api/http";
 // (auth.uid() -- badges are human-anchored, same as audience_groups).
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const MODES = new Set(["EVERYONE", "FOLLOWERS", "GROUP"]);
+const MODES = new Set(["EVERYONE", "FOLLOWERS", "GROUP", "ONLY_ME"]);
 
 type Ctx = { params: Promise<{ badgeId: string }> };
 
