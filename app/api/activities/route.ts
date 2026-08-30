@@ -24,6 +24,35 @@ const ELEVATION_SOURCES = new Set(["BAROMETER", "GPS", "NONE"]);
 // truncated -- silently dropping half a route would corrupt the distance.
 const MAX_POINTS = 20000;
 
+// Otter Trails hardening -- GPS-loss/weak-GPS/network-loss incidents the
+// recorder detected live during the session (activity_recorder.dart). A
+// handful of open/close pairs per activity is normal; MAX_EVENTS is a
+// sanity cap, not an expected count. Purely informational -- never affects
+// distance, XP, or fraud signals, so malformed input is dropped to `[]`
+// rather than failing the whole save the way a bad polyline does.
+const CONDITION_EVENT_TYPES = new Set(["gps_lost", "gps_weak", "network_lost"]);
+const MAX_CONDITION_EVENTS = 200;
+
+type ConditionEvent = { type: string; startOffset: number; endOffset: number | null };
+
+function sanitizeConditionEvents(input: unknown): ConditionEvent[] {
+  if (!Array.isArray(input) || input.length > MAX_CONDITION_EVENTS) return [];
+  const out: ConditionEvent[] = [];
+  for (const raw of input) {
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw as Record<string, unknown>;
+    const type = String(r.type ?? "");
+    if (!CONDITION_EVENT_TYPES.has(type)) continue;
+    const startOffset = Number(r.startOffset);
+    if (!Number.isFinite(startOffset) || startOffset < 0) continue;
+    const endOffset =
+      r.endOffset === null || r.endOffset === undefined ? null : Number(r.endOffset);
+    if (endOffset !== null && (!Number.isFinite(endOffset) || endOffset < startOffset)) continue;
+    out.push({ type, startOffset, endOffset });
+  }
+  return out;
+}
+
 type Pt = [number, number, number | null, number];
 
 /**
@@ -140,6 +169,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       // Phase 10 -- how many fixes the device's OS flagged as mock-location
       // (Android only; see save_activity()'s own comment on the iOS gap).
       p_mocked_fix_count: num(body.mockedFixCount) ?? 0,
+      p_condition_events: sanitizeConditionEvents(body.conditionEvents),
     });
     if (error) return fail(error.message, 500);
 
