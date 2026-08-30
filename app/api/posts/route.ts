@@ -45,7 +45,10 @@ export async function GET(request: NextRequest): Promise<Response> {
       const ids = ((rows ?? []) as { id: string }[]).map((r) => r.id);
       const built = await Promise.all(
         ids.map(async (id) => {
-          const { data: p } = await db.rpc("build_post_json", { p_post_id: id });
+          const { data: p } = await db.rpc("build_post_json", {
+            p_post_id: id,
+            p_viewer: viewer?.id ?? null,
+          });
           return p;
         })
       );
@@ -57,7 +60,11 @@ export async function GET(request: NextRequest): Promise<Response> {
     if (!UUID_RE.test(postId)) return fail("Invalid post ID format", 400);
 
     const db = createAdminClient();
-    const { data, error } = await db.rpc("build_post_json", { p_post_id: postId });
+    const viewer = await getServerUser(request);
+    const { data, error } = await db.rpc("build_post_json", {
+      p_post_id: postId,
+      p_viewer: viewer?.id ?? null,
+    });
     if (error) return fail(error.message, 500);
     if (!data) return fail("Post not found", 404);
     return ok(data, "Post retrieved successfully");
@@ -167,7 +174,10 @@ export async function POST(request: NextRequest): Promise<Response> {
       return fail(error.message, 500);
     }
 
-    const { data: post } = await db.rpc("build_post_json", { p_post_id: inserted.id });
+    const { data: post } = await db.rpc("build_post_json", {
+      p_post_id: inserted.id,
+      p_viewer: user.profileId,
+    });
     return ok(post, "Post uploaded!");
   } catch (e) {
     console.error("POST /api/posts error:", e);
@@ -200,7 +210,10 @@ export async function PATCH(request: NextRequest): Promise<Response> {
       .single();
     if (error || !data) return fail("Post not found.", 404);
 
-    const { data: post } = await db.rpc("build_post_json", { p_post_id: postId });
+    const { data: post } = await db.rpc("build_post_json", {
+      p_post_id: postId,
+      p_viewer: user.profileId,
+    });
     return ok(post, "Post updated successfully!");
   } catch (e) {
     console.error("PATCH /api/posts error:", e);

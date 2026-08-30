@@ -108,16 +108,16 @@ export async function PATCH(request: NextRequest): Promise<Response> {
   // of onboarding completion. award_badge()'s own unique(user_id,badge_key)
   // gate makes this safe even if called twice, but the edge check avoids an
   // RPC on every unrelated settings PATCH once onboarding is already done.
+  //
+  // Goes through grant_onboarding_bonus() (20260830050000), not
+  // trails_award_xp/award_badge directly -- those two are now internal-only
+  // (revoked from anon+authenticated) after the security audit found them
+  // callable with zero identity check and a caller-controlled reward
+  // amount. The wrapper is self-only and bakes in these exact fixed
+  // amounts, so there's nothing left for a caller to manipulate.
   const wasOnboarded = withDefaults(current?.preferences).onboarding.completed;
   if (!wasOnboarded && merged.onboarding.completed) {
-    await db.rpc("trails_award_xp", { p_uid: user.profileId, p_xp: 100 });
-    await db.rpc("award_badge", {
-      p_uid: user.profileId,
-      p_badge_key: "early_bird",
-      p_meta: {},
-      p_reward_minor: 500,
-      p_note: "Completed onboarding",
-    });
+    await db.rpc("grant_onboarding_bonus");
   }
 
   return ok({ preferences: merged }, "Preferences saved");

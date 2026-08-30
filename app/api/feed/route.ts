@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getServerUser } from "@/lib/auth/server";
 import { getBlockedPairIds } from "@/lib/api/blocks";
 import { captureRouteError } from "@/lib/observability";
 
@@ -76,11 +77,17 @@ async function blendOfferings(db: ReturnType<typeof createAdminClient>, posts: a
 
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
-  // Coalesce missing/stringified-undefined ids to null so an unauthenticated or
-  // not-yet-resolved viewer gets the public feed instead of a uuid parse error.
-  const rawId = sp.get("id");
-  const profileId =
-    rawId && rawId !== "undefined" && rawId !== "null" ? rawId : null;
+  // security audit fix (20260830) -- `id` used to be trusted straight off
+  // the query string with zero verification: `GET /api/feed?id=<any-uuid>`
+  // returned THAT person's personalized feed (their follow graph, private/
+  // followers-only content they have access to, and their own myVote/
+  // likedByViewer/isReposted/iWouldGo/iBeenThere flags on every post) to any
+  // unauthenticated caller, no login required. The real caller's identity
+  // is `getServerUser(request)`'s own server-verified session -- every
+  // legitimate client call already passes its own id here anyway, so this
+  // is a pure hardening with no behavior change for real traffic.
+  const user = await getServerUser(request);
+  const profileId = user?.profileId ?? null;
   const page = parseInt(sp.get("page") || "1", 10);
   const limit = parseInt(sp.get("limit") || "10", 10);
   const mode = sp.get("mode");

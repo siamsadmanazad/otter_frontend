@@ -19,7 +19,10 @@ export async function GET(request: NextRequest): Promise<Response> {
       .limit(50);
     const ids = ((data ?? []) as { id: string }[]).map((r) => r.id);
     const journals = await Promise.all(
-      ids.map(async (id) => (await db.rpc("build_post_json", { p_post_id: id })).data)
+      ids.map(
+        async (id) =>
+          (await db.rpc("build_post_json", { p_post_id: id, p_viewer: user.profileId })).data
+      )
     );
     return ok(journals.filter(Boolean), "get journals");
   } catch (e) {

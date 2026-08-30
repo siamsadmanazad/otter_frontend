@@ -71,7 +71,7 @@ async function tribeMembers(db: DB, tribeId: string, page: string, limit: string
   return ((data ?? []) as any[]).map((r) => ({ ...mapPublicUser(r.u), role: r.role ?? "MEMBER" }));
 }
 
-async function tribePosts(db: DB, tribeId: string, page: string, limit: string) {
+async function tribePosts(db: DB, tribeId: string, page: string, limit: string, viewerId: string) {
   const { from, to } = range(page, limit);
   const { data } = await db
     .from("posts")
@@ -82,7 +82,7 @@ async function tribePosts(db: DB, tribeId: string, page: string, limit: string) 
   const ids = ((data ?? []) as { id: string }[]).map((r) => r.id);
   const posts = await Promise.all(
     ids.map(async (id) => {
-      const { data: p } = await db.rpc("build_post_json", { p_post_id: id });
+      const { data: p } = await db.rpc("build_post_json", { p_post_id: id, p_viewer: viewerId });
       return p;
     })
   );
@@ -184,7 +184,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     if (members === "true" && tribeId && page && limit) {
       payload = await tribeMembers(db, tribeId, page, limit);
     } else if (posts === "true" && tribeId && page && limit) {
-      payload = await tribePosts(db, tribeId, page, limit);
+      payload = await tribePosts(db, tribeId, page, limit, user.profileId);
     } else if (ownership) {
       payload = await tribesByOwnership(db, ownership, user.profileId, page, limit, interests);
     } else if (page && limit) {
