@@ -4,12 +4,13 @@ import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
 import { canViewProfile } from "@/lib/api/visibility";
 import { enforceRateLimit } from "@/lib/ratelimit";
+import { timeRoute } from "@/lib/observability";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // GET /api/posts?id=<uuid>  (also accepts ?postId= — legacy) -> single post (IPostProps)
 // GET /api/posts?owner=<uuid>&page=&limit= -> that user's posts (newest-first)
-export async function GET(request: NextRequest): Promise<Response> {
+export const GET = timeRoute("posts", async (request: NextRequest): Promise<Response> => {
   try {
     const sp = request.nextUrl.searchParams;
     const owner = sp.get("owner");
@@ -43,16 +44,19 @@ export async function GET(request: NextRequest): Promise<Response> {
         .range(from, from + limit - 1);
       if (listErr) return fail(listErr.message, 500);
       const ids = ((rows ?? []) as { id: string }[]).map((r) => r.id);
-      const built = await Promise.all(
-        ids.map(async (id) => {
-          const { data: p } = await db.rpc("build_post_json", {
-            p_post_id: id,
-            p_viewer: viewer?.id ?? null,
-          });
-          return p;
-        })
-      );
-      return ok(built.filter(Boolean), "Posts retrieved successfully");
+      if (ids.length === 0) return ok([], "Posts retrieved successfully");
+      // PERFORMANCE.md P0-3: this used to be 1 + N round trips
+      // (build_post_json called once per id), each returning the full
+      // unbounded likes[]/comments[] arrays -- exactly what get_feed_v3
+      // fixed for the main feed and never propagated here. One batch call,
+      // bounded per-post shape, order preserved by p_ids' own order.
+      const { data: built, error: builtErr } = await db.rpc("feed_posts_slim", {
+        p_ids: ids,
+        p_viewer: viewer?.id ?? null,
+        p_reason: "profile",
+      });
+      if (builtErr) return fail(builtErr.message, 500);
+      return ok((built as unknown[]) ?? [], "Posts retrieved successfully");
     }
 
     const postId = sp.get("id") ?? sp.get("postId");
@@ -72,7 +76,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     console.error("GET /api/posts error:", e);
     return fail("Internal server error", 500);
   }
-}
+});
 
 // The three genre values a client may send. feed_genres.md §5.1: `genre` is
 // the new, explicit field -- when present it's authoritative. When absent

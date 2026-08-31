@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createActorClient } from "@/lib/supabase/server";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
+import { timeRoute } from "@/lib/observability";
 
 // GET /api/posts/[postId]/comments?page=&limit=&sort=top|new|controversial
 // -> top-level comments, each carrying its own
@@ -16,10 +17,10 @@ import { ok, fail } from "@/lib/api/http";
 // Comments are public read (RLS: comments_select_all), so this never gates
 // on login — an anonymous caller gets the same list with iLiked always
 // false (p_viewer null). feed_detail_split.md A4/F6.
-export async function GET(
+export const GET = timeRoute("posts.comments", async (
   request: NextRequest,
   { params }: { params: Promise<{ postId: string }> }
-): Promise<Response> {
+): Promise<Response> => {
   try {
     const { postId } = await params;
     if (!postId?.trim()) return fail("Post ID is required", 400);
@@ -53,4 +54,4 @@ export async function GET(
     console.error("GET /api/posts/[postId]/comments error:", e);
     return fail("Internal server error", 500);
   }
-}
+});

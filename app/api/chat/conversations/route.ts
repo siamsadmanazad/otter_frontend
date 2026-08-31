@@ -10,6 +10,7 @@ import {
   persistExpiredVoicePurge,
 } from "@/lib/api/chat-attachments";
 import { createStageTimer } from "@/lib/api/timing";
+import { timeRoute } from "@/lib/observability";
 
 type Profile = {
   id: string;
@@ -33,7 +34,7 @@ function mapUser(p: Profile | null) {
 //   archived        -> archived
 // Actor client: RLS (cp_select_participant / conversations_select_participant) scopes
 // every read to the caller's own conversations.
-export async function GET(request: NextRequest): Promise<Response> {
+export const GET = timeRoute("chat.conversations", async (request: NextRequest): Promise<Response> => {
   const timer = createStageTimer("conversations");
   const me = await getServerUser(request);
   timer.mark("auth");
@@ -67,6 +68,36 @@ export async function GET(request: NextRequest): Promise<Response> {
     return ok([], "No conversations");
   }
 
+  // PERFORMANCE.md Phase 6 (P1-7): this route had no page/limit at all --
+  // every call (web and Flutter both) fetched every one of the caller's
+  // conversations, unconditionally. Opt-in only: neither param supplied ->
+  // exactly the old unbounded behavior (the web client never sends them
+  // today), so nothing already deployed can regress. When supplied, an
+  // extra small query narrows `convIds` down to one page's worth, sorted the
+  // same way the final result already is, BEFORE round B's heavier embed
+  // query runs -- round B then does the same work it always did, just on a
+  // page instead of everything.
+  const pageParam = request.nextUrl.searchParams.get("page");
+  const limitParam = request.nextUrl.searchParams.get("limit");
+  let pagedIds = convIds;
+  if (pageParam !== null || limitParam !== null) {
+    const page = Math.max(1, parseInt(pageParam || "1", 10));
+    const limit = Math.min(50, Math.max(1, parseInt(limitParam || "30", 10)));
+    const from = (page - 1) * limit;
+    const { data: pageRows } = await db
+      .from("conversations")
+      .select("id")
+      .in("id", convIds)
+      .order("last_message_at", { ascending: false, nullsFirst: false })
+      .range(from, from + limit - 1);
+    pagedIds = (pageRows ?? []).map((r: any) => r.id);
+    if (pagedIds.length === 0) {
+      await blockedIdsPromise;
+      timer.finish({ convIds: convIds.length, paged: 0 });
+      return ok([], "No conversations");
+    }
+  }
+
   const mutedByConv = new Map<string, boolean>();
   const pinnedAtByConv = new Map<string, string>();
   for (const r of myRows ?? []) {
@@ -94,7 +125,7 @@ export async function GET(request: NextRequest): Promise<Response> {
           "id, content, sender_id, created_at, deleted_at, attachments, expires_at, listen_once, voice_played_at, " +
           "message_reads(user_id))"
       )
-      .in("id", convIds)
+      .in("id", pagedIds)
       .order("last_message_at", { ascending: false, nullsFirst: false }),
     // All participants (with profiles + delivered cursor) for these conversations.
     db
@@ -102,7 +133,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       .select(
         "conversation_id, user_id, last_delivered_at, profile:profiles!conversation_participants_user_id_fkey(id, username, full_name, profile_image)"
       )
-      .in("conversation_id", convIds),
+      .in("conversation_id", pagedIds),
   ]);
   timer.mark("roundB");
   const { data: convs, error } = convsRes;
@@ -266,7 +297,7 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   timer.finish({ count: result.length });
   return ok(result, "Conversations fetched");
-}
+});
 
 // POST /api/chat/conversations  body { userId } -> create or return the DIRECT conversation with that user.
 // NOTE: intentionally uses the admin client. Creating a direct conversation must read the OTHER user's

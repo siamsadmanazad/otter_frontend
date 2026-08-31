@@ -5,6 +5,9 @@
  * HTTP (no SDK dependency, no bundle cost). When unset, every call is a no-op. Reporting
  * is fire-and-forget and never throws, so it can't affect a request's outcome.
  */
+import { NextRequest, after } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+
 function parseDsn(dsn: string) {
   // https://<publicKey>@<host>/<projectId>
   const m = dsn.match(/^https:\/\/([^@]+)@([^/]+)\/(.+)$/);
@@ -43,4 +46,53 @@ export function captureRouteError(
     },
     body: JSON.stringify(payload),
   }).catch(() => {});
+}
+
+/**
+ * PERFORMANCE.md Phase 0: wraps a route handler to record its duration into
+ * `route_timings` (20260831140000_route_timings.sql) -- the baseline every
+ * later phase's "measure before optimizing" claim has to cite. The write
+ * happens via `after()`, so it runs once the response has already been sent
+ * and never adds latency to the request being measured; a failed write is
+ * swallowed, matching captureRouteError's own fail-open style. No SDK, no
+ * new dependency -- same one-file, dependency-free posture as the rest of
+ * this module.
+ *
+ * Usage: `export const GET = timeRoute("feed", async (request) => { ... });`
+ * Works for dynamic routes too -- any extra args (e.g. `{ params }`) pass
+ * through untouched.
+ */
+export function timeRoute<Args extends unknown[]>(
+  route: string,
+  handler: (request: NextRequest, ...rest: Args) => Promise<Response>
+): (request: NextRequest, ...rest: Args) => Promise<Response> {
+  return async (request: NextRequest, ...rest: Args): Promise<Response> => {
+    const start = Date.now();
+    let status = 500;
+    try {
+      const res = await handler(request, ...rest);
+      status = res.status;
+      return res;
+    } finally {
+      const durationMs = Date.now() - start;
+      const method = request.method;
+      after(() => recordTiming(route, method, status, durationMs));
+    }
+  };
+}
+
+async function recordTiming(
+  route: string,
+  method: string,
+  status: number,
+  durationMs: number
+): Promise<void> {
+  try {
+    const db = createAdminClient();
+    await db
+      .from("route_timings")
+      .insert({ route, method, status, duration_ms: durationMs });
+  } catch {
+    // Telemetry must never matter to anything.
+  }
 }

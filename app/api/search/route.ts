@@ -3,12 +3,14 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { getBlockedPairIds } from "@/lib/api/blocks";
 import { ok, fail, mapTribe, mapPublicUser } from "@/lib/api/http";
+import { enforceRateLimit } from "@/lib/ratelimit";
+import { timeRoute } from "@/lib/observability";
 
 // GET /api/search?q=&limit=
 // One round trip via the search_all() RPC (pg_trgm-ranked): profiles, public
 // tribes, and top-level posts matching the query, all in a single call instead
 // of separate per-entity queries. Returns { users, tribes, posts }.
-export async function GET(request: NextRequest): Promise<Response> {
+export const GET = timeRoute("search", async (request: NextRequest): Promise<Response> => {
   try {
     const sp = request.nextUrl.searchParams;
     const q = sp.get("q")?.trim() || "";
@@ -23,6 +25,11 @@ export async function GET(request: NextRequest): Promise<Response> {
     // input -- it means "anonymous", and the RPC only lets PUBLIC posts
     // through for that case.
     const viewer = await getServerUser(request);
+
+    // PERFORMANCE.md P0-2: search was reachable with no rate limit, incl.
+    // anonymously (limitKey falls back to IP when there's no signed-in user).
+    const limited = await enforceRateLimit("search", viewer?.id ?? null, request, 30, 30);
+    if (limited) return limited;
 
     const db = createAdminClient();
     const { data, error } = await db.rpc("search_all", {
@@ -54,4 +61,4 @@ export async function GET(request: NextRequest): Promise<Response> {
     console.error("GET /api/search error:", e);
     return fail("Internal server error", 500);
   }
-}
+});

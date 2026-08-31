@@ -18,6 +18,7 @@ import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { makeLocalMediaFactory } from "./lib/local_fixture_media.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -45,6 +46,11 @@ if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
 const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
+// PERFORMANCE.md P1-11: locally-generated avatars/photos, not a third-party host.
+const localImage = makeLocalMediaFactory({
+  url: SUPABASE_URL,
+  serviceRoleKey: SERVICE_ROLE_KEY,
+});
 
 const PASSWORD = "OtterDemo!2026";
 const PURGE = process.argv.includes("--purge");
@@ -57,7 +63,7 @@ const DEPRECATED = ["ben", "cara", "diego", "emi", "farah", "george", "hana"];
 const JUNK_TRIBES = ["H1 Retry 1782205155"];
 
 const email = (key) => `otter.demo+${key}@tripotter.app`;
-const avatar = (id) => `https://i.pravatar.cc/400?u=${id}`;
+const avatar = (id) => localImage(id, 400, 400);
 
 // Rotating pixel-dimension buckets so seeded posts exercise every ratio the
 // feed's mapToDisplayRatio() maps to (see otter_flutter/lib/core/feed_design.dart)
@@ -77,7 +83,10 @@ const PHOTO_DIMS = [
 ];
 const photo = (kw, lock) => {
   const [w, h] = PHOTO_DIMS[lock % PHOTO_DIMS.length];
-  return `https://loremflickr.com/${w}/${h}/${encodeURIComponent(kw)}?lock=${lock}`;
+  // PERFORMANCE.md P1-11: `${kw}-${lock}` keeps every call site's existing
+  // "different photo per lock" behavior, now resolved to a local fixture
+  // instead of a loremflickr request.
+  return localImage(`${kw}-${lock}`, w, h);
 };
 
 // --- the roster -------------------------------------------------------------
@@ -441,8 +450,8 @@ async function ensureUsers() {
         username: p.username,
         bio: p.bio,
         location: p.location,
-        profile_image: avatar(ids[p.key]),
-        cover_image: img(p.cover),
+        profile_image: await avatar(ids[p.key]),
+        cover_image: await img(p.cover),
       })
       .eq("id", ids[p.key]);
   }
@@ -484,9 +493,19 @@ async function ensurePosts(ids) {
   const rows = [];
   for (const p of PERSONAS) {
     for (const post of p.posts) {
-      rows.push({ owner_id: ids[p.key], caption: post.cap, images: [img(post.kw)], post_type: "POST" });
+      rows.push({
+        owner_id: ids[p.key],
+        caption: post.cap,
+        images: [await img(post.kw)],
+        post_type: "POST",
+      });
     }
-    rows.push({ owner_id: ids[p.key], caption: p.journal.cap, images: [img(p.cover)], post_type: "JOURNAL" });
+    rows.push({
+      owner_id: ids[p.key],
+      caption: p.journal.cap,
+      images: [await img(p.cover)],
+      post_type: "JOURNAL",
+    });
   }
   const { error } = await db.from("posts").insert(rows);
   if (error) throw error;
@@ -596,7 +615,7 @@ async function ensureTribesAndTrips(ids) {
       await db.from("posts").insert({
         owner_id: ids[p.key],
         caption: `Welcome to ${t.name}! ${t.description} Drop an intro 👇`,
-        images: [img(p.cover)],
+        images: [await img(p.cover)],
         post_type: "POST",
         tribe_id: tribeId,
       });

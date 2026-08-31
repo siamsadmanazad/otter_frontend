@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { getBlockedPairIds } from "@/lib/api/blocks";
-import { captureRouteError } from "@/lib/observability";
+import { captureRouteError, timeRoute } from "@/lib/observability";
+import { enforceRateLimit } from "@/lib/ratelimit";
 
 // GET /api/feed?id=<viewerId>&page=&limit=&mode=foryou|following
 //   mode=following -> only posts from accounts the viewer follows (get_following_feed)
@@ -40,11 +41,36 @@ import { captureRouteError } from "@/lib/observability";
 // `__feedItemType: "offering"` so the client can distinguish them from a
 // plain post; a real post's shape is completely unchanged (no wrapper),
 // so this has zero effect on any other consumer of this same array shape.
+// PERFORMANCE.md Phase 3 (P0-5): offering_blend_density is pure config (a
+// single row read via `select density from offering_blend_settings limit
+// 1`), but was re-fetched with its own round trip on every single feed
+// request forever. Module-level memoization survives across warm
+// invocations on the same serverless instance -- the same best-effort
+// pattern lib/auth/server.ts already uses for its JWKS verifier client. A
+// config change takes up to DENSITY_TTL_MS to reach any given warm
+// instance; an acceptable trade to remove a whole round trip from the
+// hottest endpoint in the app. Promote to Redis only if this is ever
+// measured to matter across instances (PERFORMANCE.md Phase 7).
+const DENSITY_TTL_MS = 60_000;
+let densityCache: { value: number; at: number } | null = null;
+
+async function getOfferingBlendDensity(
+  db: ReturnType<typeof createAdminClient>
+): Promise<number | null> {
+  if (densityCache && Date.now() - densityCache.at < DENSITY_TTL_MS) {
+    return densityCache.value;
+  }
+  const { data, error } = await db.rpc("offering_blend_density");
+  if (error || !data || data <= 0) return null;
+  densityCache = { value: data, at: Date.now() };
+  return data;
+}
+
 async function blendOfferings(db: ReturnType<typeof createAdminClient>, posts: any[]) {
   if (posts.length === 0) return posts;
   try {
-    const { data: density, error: densityErr } = await db.rpc("offering_blend_density");
-    if (densityErr || !density || density <= 0) return posts;
+    const density = await getOfferingBlendDensity(db);
+    if (!density) return posts;
 
     const slots = Math.floor(posts.length / density);
     if (slots <= 0) return posts;
@@ -75,7 +101,7 @@ async function blendOfferings(db: ReturnType<typeof createAdminClient>, posts: a
   }
 }
 
-export async function GET(request: NextRequest) {
+export const GET = timeRoute("feed", async (request: NextRequest) => {
   const sp = request.nextUrl.searchParams;
   // security audit fix (20260830) -- `id` used to be trusted straight off
   // the query string with zero verification: `GET /api/feed?id=<any-uuid>`
@@ -88,8 +114,17 @@ export async function GET(request: NextRequest) {
   // is a pure hardening with no behavior change for real traffic.
   const user = await getServerUser(request);
   const profileId = user?.profileId ?? null;
+
+  // PERFORMANCE.md P0-2: the single highest-traffic route had no rate limit
+  // at all. Generous ceiling (well above real scroll/refresh behavior) --
+  // this exists to stop abuse, not to throttle legitimate use.
+  const limited = await enforceRateLimit("feed", user?.id ?? null, request, 90, 60);
+  if (limited) return limited;
+
   const page = parseInt(sp.get("page") || "1", 10);
-  const limit = parseInt(sp.get("limit") || "10", 10);
+  // PERFORMANCE.md P0-1: clamp so `?limit=100000` can't force an unbounded
+  // scan/payload. 30 is generous headroom over the client's actual page size (10).
+  const limit = Math.min(30, Math.max(1, parseInt(sp.get("limit") || "10", 10) || 10));
   const mode = sp.get("mode");
   const wantsV4 = sp.get("v") === "4";
   const wantsV3 = sp.get("v") === "3";
@@ -106,7 +141,16 @@ export async function GET(request: NextRequest) {
   const onlyRaw = clean(sp.get("only"));
   const only = onlyRaw === "MOMENTS" || onlyRaw === "POSTS" ? onlyRaw : null;
 
-  // Shared block-filter so v4/v3/v2 paths behave identically.
+  // PERFORMANCE.md Phase 3 (P0-5, P0-6): block filtering used to run here,
+  // AFTER every RPC call, as its own extra round trip -- and because it ran
+  // after the page/cursor was already cut to p_limit, a page with a blocked
+  // author in it came back short (holes in the feed) while the cursor still
+  // advanced as if a full page had been served. get_feed_v4/v3 and
+  // get_following_feed_v3 (20260831120000_feed_blocks_in_query.sql) now
+  // exclude blocked pairs INSIDE the query, before the limit/cursor cut, so
+  // this is no longer needed on those paths. Kept only for the legacy
+  // OFFSET fallbacks (get_feed_v2, get_following_feed) below, which are
+  // unchanged -- they're the degraded path, not the one this phase targets.
   const filterBlocked = async (db: any, posts: any[]) => {
     if (!profileId || posts.length === 0) return posts;
     const blocked = await getBlockedPairIds(db, profileId);
@@ -131,7 +175,9 @@ export async function GET(request: NextRequest) {
         p_only: only,
       });
       if (error) throw error;
-      const posts = await filterBlocked(db, (data?.posts as any[]) ?? []);
+      // get_feed_v4 already excludes blocked pairs (20260831120000) -- no
+      // separate filterBlocked() round trip needed here.
+      const posts = (data?.posts as any[]) ?? [];
       // Business Mode Phase 4.3 -- splice live offerings into this PAGE's
       // post array, entirely additive and independent of get_feed_v4's own
       // cursor/buffer logic (see 20260827160000_offering_blend_settings.sql
@@ -166,7 +212,8 @@ export async function GET(request: NextRequest) {
         p_limit: limit,
       });
       if (error) throw error;
-      const posts = await filterBlocked(db, (data?.posts as any[]) ?? []);
+      // get_feed_v3 already excludes blocked pairs (20260831120000).
+      const posts = (data?.posts as any[]) ?? [];
       return NextResponse.json({
         message: "Received feed data",
         status: 200,
@@ -179,6 +226,50 @@ export async function GET(request: NextRequest) {
       });
       const { data, error } = await db.rpc("get_feed_v2", {
         p_viewer: profileId || null,
+        p_page: page,
+        p_limit: limit,
+      });
+      if (error) throw error;
+      const posts = await filterBlocked(db, (data as any[]) ?? []);
+      return NextResponse.json({
+        message: "Received feed data",
+        status: 200,
+        data: {
+          posts,
+          nextCursor: null,
+          served: "v2",
+          hasMore: posts.length === limit,
+        },
+      });
+    }
+  }
+
+  // --- P0-4: bounded, keyset-paginated "Following" feed (mirrors the For
+  // You v3 path exactly), only when the client explicitly opts in via
+  // v=3 -- an older client that never sends `v` keeps hitting the
+  // page-based get_following_feed below unchanged.
+  if (mode === "following" && !!profileId && wantsV3) {
+    try {
+      const { data, error } = await db.rpc("get_following_feed_v3", {
+        p_viewer: profileId,
+        p_cursor_at: cursorAt,
+        p_cursor_id: cursorId,
+        p_limit: limit,
+      });
+      if (error) throw error;
+      // get_following_feed_v3 already excludes blocked pairs (20260831120000).
+      const posts = (data?.posts as any[]) ?? [];
+      return NextResponse.json({
+        message: "Received feed data",
+        status: 200,
+        data: { posts, nextCursor: data?.nextCursor ?? null, served: "v3" },
+      });
+    } catch (err) {
+      captureRouteError("following feed v3 unavailable, falling back to page-based", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      const { data, error } = await db.rpc("get_following_feed", {
+        p_viewer: profileId,
         p_page: page,
         p_limit: limit,
       });
@@ -239,4 +330,4 @@ export async function GET(request: NextRequest) {
       pagination: { currentPage: 1, postsPerPage: limit, totalPosts: 0, totalPages: 0, hasMore: false },
     });
   }
-}
+});

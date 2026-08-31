@@ -12,6 +12,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { makeLocalMediaFactory } from "./lib/local_fixture_media.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -43,11 +44,11 @@ const headers = {
   Authorization: `Bearer ${KEY}`,
   "Content-Type": "application/json",
 };
+const localImage = makeLocalMediaFactory({ url: URL_BASE, serviceRoleKey: KEY });
 
 const MARKER = "#otterwave";
-const img = (id) =>
-  `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=1080&q=80`;
-const fallback = (i) => `https://picsum.photos/seed/otterwave${i}/1080/1080`;
+// PERFORMANCE.md P1-11: locally-generated, not images.unsplash.com.
+const img = (id) => localImage(id, 1080, 1080);
 
 const POSTS = [
   { id: "1507525428034-b723cf961d3e", type: "POST", location: "Tulum, Mexico",
@@ -76,15 +77,6 @@ const POSTS = [
     caption: `Three months, eleven beaches, zero alarm clocks — a love letter to the sea. ${MARKER}` },
 ];
 
-async function ok(url) {
-  try {
-    const r = await fetch(url, { method: "HEAD" });
-    return r.ok;
-  } catch {
-    return false;
-  }
-}
-
 async function main() {
   // Resolve Alice.
   const pRes = await fetch(
@@ -106,18 +98,17 @@ async function main() {
   );
   if (!delRes.ok) console.warn("Cleanup warning:", await delRes.text());
 
-  // Verify images; swap failures for fallbacks so no tile renders broken.
-  let swapped = 0;
+  // PERFORMANCE.md P1-11: locally-generated images (via localImage) always
+  // exist, so the old "HEAD-check the unsplash URL, swap in a picsum
+  // fallback if it 404s" dance is gone entirely -- there's nothing left to
+  // verify.
   const rows = [];
   for (let i = 0; i < POSTS.length; i++) {
     const p = POSTS[i];
-    const url = img(p.id);
-    const good = await ok(url);
-    if (!good) swapped++;
     rows.push({
       owner_id: alice.id,
       caption: p.caption,
-      images: [good ? url : fallback(i)],
+      images: [await img(p.id)],
       post_type: p.type,
       location: p.location,
     });
@@ -133,9 +124,7 @@ async function main() {
     process.exit(1);
   }
   const inserted = await insRes.json();
-  console.log(
-    `✓ Inserted ${inserted.length} posts (${swapped} image(s) fell back to Picsum).`
-  );
+  console.log(`✓ Inserted ${inserted.length} posts.`);
 }
 
 main().then(() => process.exit(0));

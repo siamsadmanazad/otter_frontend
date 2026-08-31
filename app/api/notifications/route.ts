@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
+import { enforceRateLimit } from "@/lib/ratelimit";
+import { timeRoute } from "@/lib/observability";
 
 // COMMENT_REPLY/COMMENT_LIKE carry a *comment* id in target_id, which isn't
 // itself a navigable destination — the post it belongs to is. parentPostId
@@ -52,9 +54,12 @@ const FILTER_TYPES: Record<string, string[]> = {
 // GET /api/notifications?page=&limit=&filter=&unread= -> current user's notifications
 //   filter: all | follows | likes | comments | mentions | tribes | trips
 //   unread: "true" -> only unread rows
-export async function GET(request: NextRequest): Promise<Response> {
+export const GET = timeRoute("notifications", async (request: NextRequest): Promise<Response> => {
   const user = await getServerUser(request);
   if (!user) return fail("Unauthorized", 401);
+  // PERFORMANCE.md P0-2: notifications was one of the hot reads with no limit.
+  const limited = await enforceRateLimit("notifications", user.id, request, 60, 60);
+  if (limited) return limited;
   const sp = request.nextUrl.searchParams;
   const page = Math.max(1, parseInt(sp.get("page") || "1", 10));
   const limit = Math.min(100, Math.max(1, parseInt(sp.get("limit") || "30", 10)));
@@ -102,7 +107,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     (data ?? []).map((n) => mapNotification(n, parentPostByCommentId)),
     "Notifications fetched"
   );
-}
+});
 
 // DELETE /api/notifications?id=   -> remove one of the caller's own notifications
 //        /api/notifications?all=true -> clear all of the caller's notifications

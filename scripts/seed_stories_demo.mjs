@@ -12,6 +12,7 @@ import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { makeLocalMediaFactory } from "./lib/local_fixture_media.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -39,6 +40,11 @@ if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
 const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
+// PERFORMANCE.md P1-11: locally-generated, not a third-party host.
+const localImage = makeLocalMediaFactory({
+  url: SUPABASE_URL,
+  serviceRoleKey: SERVICE_ROLE_KEY,
+});
 
 const PURGE = process.argv.includes("--purge");
 const TAG = "demo-stories-seed"; // marker used only in alt_text so --purge can find them
@@ -56,10 +62,7 @@ const PERSONA_KEYS = [
   "goldenhour_noah",
 ];
 
-// Plain real photos, no borders/watermarks (unlike some loremflickr,category
-// combos, which can return framed/bordered stock images).
-const img = (seed, w = 1080, h = 1440) =>
-  `https://picsum.photos/seed/${encodeURIComponent(seed)}/${w}/${h}`;
+const img = (seed, w = 1080, h = 1440) => localImage(seed, w, h);
 
 async function main() {
   if (PURGE) {
@@ -112,7 +115,7 @@ async function main() {
       continue;
     }
     i += 1;
-    const url = img(key + i);
+    const url = await img(key + i);
     const place = places?.[i % (places.length || 1)];
     const tribe = tribes?.[i % (tribes.length || 1)];
     const taggedPlace = i % 3 === 0 && place;

@@ -130,6 +130,13 @@ export async function POST(request: NextRequest) {
     const { error: upErr } = await db.storage.from(CHAT_ATTACHMENTS_BUCKET).upload(path, buffer, {
       contentType,
       upsert: false,
+      // PERFORMANCE.md P1-3: same fix as app/api/media/route.ts -- these
+      // paths are immutable UUIDs too (upsert: false), so a long, immutable
+      // cache is safe. Doesn't weaken the access control: this bucket is
+      // still only reachable via a signed, time-limited URL (below); this
+      // only affects how long a client that already has a valid signed URL
+      // may reuse its own cached copy of the bytes.
+      cacheControl: "31536000, immutable",
     });
     if (upErr) return fail(upErr.message, 500);
 

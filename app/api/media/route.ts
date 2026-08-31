@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { isAllowed, limitKey } from "@/lib/ratelimit";
 import { moderateImage } from "@/lib/moderation";
-import { captureRouteError } from "@/lib/observability";
+import { captureRouteError, timeRoute } from "@/lib/observability";
 
 const BUCKET = "posts";
 const MAX_IMAGE_MB = 10;
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
 }
 
 // POST /api/media (FormData { file }) -> upload to Supabase Storage -> { mediaId, url }
-export async function POST(request: NextRequest) {
+export const POST = timeRoute("media", async (request: NextRequest) => {
   const user = await getServerUser(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -97,6 +97,13 @@ export async function POST(request: NextRequest) {
     const { error: upErr } = await db.storage.from(BUCKET).upload(path, buffer, {
       contentType,
       upsert: false,
+      // PERFORMANCE.md P1-3: was the SDK default (max-age=3600, 1 hour) even
+      // though every path is an immutable, randomly-generated UUID that's
+      // never overwritten (upsert: false) -- a pure CDN/browser cache-hit-rate
+      // loss with no upside. supabase-js builds the header as
+      // `max-age=${cacheControl}`, so this string produces exactly
+      // `Cache-Control: max-age=31536000, immutable`.
+      cacheControl: "31536000, immutable",
     });
     if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
 
@@ -124,7 +131,7 @@ export async function POST(request: NextRequest) {
     captureRouteError("media upload failed", { error: String(error) });
     return NextResponse.json({ error: "Failed to process file" }, { status: 500 });
   }
-}
+});
 
 // DELETE /api/media?id=<mediaId> -> remove from storage + media row (owner-scoped)
 export async function DELETE(request: NextRequest) {

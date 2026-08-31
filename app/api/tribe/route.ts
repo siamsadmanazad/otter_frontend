@@ -2,7 +2,8 @@ import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail, mapTribe, mapPublicUser } from "@/lib/api/http";
-import { captureRouteError } from "@/lib/observability";
+import { timeRoute } from "@/lib/observability";
+import { enforceRateLimit } from "@/lib/ratelimit";
 
 type DB = ReturnType<typeof createAdminClient>;
 
@@ -16,6 +17,12 @@ function range(page: string, limit: string) {
 }
 
 // Tribe detail (populated creator + counts) — fixes the old empty-creator bug.
+//
+// PERFORMANCE.md Phase 9 (P2): member_count/post_count are already denorm
+// columns on `tribes` (kept in sync by the toggle RPCs + the hourly
+// reconcile_denorm_counters backstop, same as posts.like_count) and are
+// already part of TRIBE_COLS above — the 2 count(*) queries this used to run
+// were re-deriving numbers already sitting on `t`. Read them directly.
 async function tribeDetail(db: DB, col: "id" | "serial", val: string) {
   const { data: t } = await db
     .from("tribes")
@@ -23,29 +30,11 @@ async function tribeDetail(db: DB, col: "id" | "serial", val: string) {
     .eq(col, val)
     .single();
   if (!t) return null;
-  const [users, posts] = await Promise.all([
-    db.from("tribe_members").select("user_id", { count: "exact", head: true }).eq("tribe_id", t.id),
-    db.from("posts").select("id", { count: "exact", head: true }).eq("tribe_id", t.id),
-  ]);
-  // Secondary enrichment (D14, same pattern as GET /api/users): these 2 count
-  // queries can fail independently of the primary tribe fetch. supabase-js
-  // resolves with `{ error }` rather than rejecting, so a failure here would
-  // otherwise be silently coalesced into a misleading "0" via `?? 0` below.
-  const countErrors = [users.error, posts.error].filter(Boolean);
-  if (countErrors.length) {
-    captureRouteError("tribe counts enrichment degraded", {
-      tribeId: t.id,
-      errors: countErrors.map((e) => e!.message),
-    });
-  }
   return {
     ...mapTribe(t),
     createdBy: mapPublicUser((t as any).creator),
-    usersCount: users.count ?? 0,
-    postsCount: posts.count ?? 0,
-    // Embedded (not just the top-level envelope) because the mobile client's
-    // ApiClient unwraps to `body.data` and drops sibling envelope keys.
-    ...(countErrors.length ? { partial: true } : {}),
+    usersCount: t.member_count ?? 0,
+    postsCount: t.post_count ?? 0,
   };
 }
 
@@ -80,13 +69,15 @@ async function tribePosts(db: DB, tribeId: string, page: string, limit: string, 
     .order("created_at", { ascending: false })
     .range(from, to);
   const ids = ((data ?? []) as { id: string }[]).map((r) => r.id);
-  const posts = await Promise.all(
-    ids.map(async (id) => {
-      const { data: p } = await db.rpc("build_post_json", { p_post_id: id, p_viewer: viewerId });
-      return p;
-    })
-  );
-  return posts.filter(Boolean);
+  if (ids.length === 0) return [];
+  // PERFORMANCE.md P0-3: 1 + N round trips (build_post_json per id, full
+  // unbounded likes[]/comments[]) -> one batch call, bounded per-post shape.
+  const { data: built } = await db.rpc("feed_posts_slim", {
+    p_ids: ids,
+    p_viewer: viewerId,
+    p_reason: "tribe",
+  });
+  return (built as unknown[]) ?? [];
 }
 
 // Onboarding step 1 ("What moves you?") writes free-text interest picks;
@@ -159,9 +150,13 @@ async function tribesByOwnership(
   return rankByInterests(mapped, interests);
 }
 
-export async function GET(request: NextRequest): Promise<Response> {
+export const GET = timeRoute("tribe", async (request: NextRequest): Promise<Response> => {
   const user = await getServerUser(request);
   if (!user) return fail("Unauthorized", 401);
+
+  // PERFORMANCE.md P0-2: reads (detail/list/members/posts) had no rate limit.
+  const limited = await enforceRateLimit("tribe_read", user.id, request, 90, 60);
+  if (limited) return limited;
 
   const sp = request.nextUrl.searchParams;
   const tribeId = sp.get("id") ?? "";
@@ -202,7 +197,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     console.error("GET /api/tribe error:", e);
     return fail("Internal server error", 500);
   }
-}
+});
 
 export async function POST(request: NextRequest): Promise<Response> {
   const user = await getServerUser(request);

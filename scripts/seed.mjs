@@ -13,6 +13,7 @@ import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { makeLocalMediaFactory } from "./lib/local_fixture_media.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -44,6 +45,11 @@ if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
 const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
+// PERFORMANCE.md P1-11: locally-generated avatars, not a third-party host.
+const localImage = makeLocalMediaFactory({
+  url: SUPABASE_URL,
+  serviceRoleKey: SERVICE_ROLE_KEY,
+});
 
 const PASSWORD = "OtterDemo!2026";
 const PURGE = process.argv.includes("--purge");
@@ -59,7 +65,7 @@ const USERS = [
   { key: "hana", username: "otter_hana", fullName: "Hana Novak", bio: "City breaks & cafés.", location: "Prague, Czechia" },
 ];
 const email = (u) => `otter.demo+${u.key}@tripotter.app`;
-const avatar = (id) => `https://i.pravatar.cc/200?u=${id}`;
+const avatar = (id) => localImage(id, 200, 200);
 
 async function findUserByEmail(addr) {
   // listUsers is paginated; demo set is tiny so scan a few pages.
@@ -112,7 +118,7 @@ async function ensureUsers() {
         username: u.username,
         bio: u.bio,
         location: u.location,
-        profile_image: avatar(ids[u.key]),
+        profile_image: await avatar(ids[u.key]),
       })
       .eq("id", ids[u.key]);
   }
