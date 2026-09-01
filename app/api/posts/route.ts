@@ -97,6 +97,66 @@ function resolveGenre(body: Record<string, unknown>): "MOMENT" | "JOURNAL" | "PO
   return body.postType === "JOURNAL" ? "JOURNAL" : "MOMENT";
 }
 
+// composers_implementation.md PART 7 M1/M3, §8.1 -- structured place +
+// per-photo alt text, additive on top of every existing field. `placeTrail`
+// is JOURNAL-only (composers.md §4's Divergence Table); `altTexts` is
+// shared by all three genres.
+type PlaceTrailEntry = {
+  placeId?: string | null;
+  name: string;
+  lat: number;
+  lng: number;
+  h3: string;
+};
+
+// Validates the place/altText fields that apply to every genre alike --
+// separated from the POST-specific block below so each genre's rules read
+// as its own list (§8.1's own stated goal for this route).
+async function validatePlaceAndAltTexts(
+  db: ReturnType<typeof createAdminClient>,
+  body: Record<string, unknown>,
+  images: string[],
+  genre: "MOMENT" | "JOURNAL" | "POST"
+): Promise<{ error: string } | { placeTrail: PlaceTrailEntry[] }> {
+  const altTexts: string[] = Array.isArray(body.altTexts) ? (body.altTexts as string[]) : [];
+  if (altTexts.length > 0 && altTexts.length !== images.length) {
+    return { error: "Alt text must be provided for every photo or none" };
+  }
+
+  const placeId = typeof body.placeId === "string" ? body.placeId : null;
+  const placeName = typeof body.placeName === "string" ? body.placeName.trim() : null;
+  const placeLat = typeof body.placeLat === "number" ? body.placeLat : null;
+  const placeLng = typeof body.placeLng === "number" ? body.placeLng : null;
+  const h3Index = typeof body.h3Index === "string" ? body.h3Index : null;
+  // All-or-none, mirroring posts_place_coords_chk -- a clear 400 beats the
+  // raw constraint-violation string.
+  const placeFields = [placeName, placeLat, placeLng, h3Index];
+  const placeFieldsSet = placeFields.filter((f) => f !== null && f !== "").length;
+  if (placeFieldsSet > 0 && placeFieldsSet < placeFields.length) {
+    return { error: "Invalid place coordinates" };
+  }
+  if (placeId) {
+    if (!h3Index) return { error: "Invalid place coordinates" };
+    const { data: placeRow } = await db
+      .from("radar_places")
+      .select("id")
+      .eq("id", placeId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (!placeRow) return { error: "That place no longer exists" };
+  }
+
+  const placeTrailRaw = Array.isArray(body.placeTrail) ? (body.placeTrail as PlaceTrailEntry[]) : [];
+  if (placeTrailRaw.length > 0 && genre !== "JOURNAL") {
+    return { error: "Only a Journal can have a place trail" };
+  }
+  if (placeTrailRaw.length > 5) {
+    return { error: "A place trail can carry at most 5 places" };
+  }
+
+  return { placeTrail: placeTrailRaw };
+}
+
 // POST /api/posts -> create post (owner = authenticated user)
 export async function POST(request: NextRequest): Promise<Response> {
   try {
@@ -115,6 +175,10 @@ export async function POST(request: NextRequest): Promise<Response> {
     const genre = resolveGenre(body);
     const tribeId: string | null = body.fromGroup ?? body.tribeId ?? null;
     const db = createAdminClient();
+
+    const placeValidation = await validatePlaceAndAltTexts(db, body, images, genre);
+    if ("error" in placeValidation) return fail(placeValidation.error, 400);
+    const { placeTrail } = placeValidation;
 
     if (genre === "POST") {
       // Posts are title-led (feed_genres.md §1.2/§5.2) -- the DB constraint
@@ -162,10 +226,17 @@ export async function POST(request: NextRequest): Promise<Response> {
       .insert({
         owner_id: user.profileId,
         images,
+        alt_texts: Array.isArray(body.altTexts) ? body.altTexts : [],
         caption: caption ?? null,
         title: genre === "POST" ? (body.title as string).trim() : null,
         link: genre === "POST" ? body.link ?? null : null,
         location: body.location ?? null,
+        place_id: typeof body.placeId === "string" ? body.placeId : null,
+        place_name: typeof body.placeName === "string" ? body.placeName.trim() : null,
+        place_lat: typeof body.placeLat === "number" ? body.placeLat : null,
+        place_lng: typeof body.placeLng === "number" ? body.placeLng : null,
+        h3_index: typeof body.h3Index === "string" ? body.h3Index : null,
+        place_trail: placeTrail,
         post_type: genre,
         tribe_id: tribeId,
       })
