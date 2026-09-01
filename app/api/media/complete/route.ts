@@ -2,7 +2,6 @@ import sharp from "sharp";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
-import { enforceRateLimit } from "@/lib/ratelimit";
 import { moderateImage } from "@/lib/moderation";
 import { captureRouteError, timeRoute } from "@/lib/observability";
 
@@ -28,9 +27,9 @@ export const POST = timeRoute("media.complete", async (request: NextRequest) => 
   const user = await getServerUser(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const limited = await enforceRateLimit("media", user.id, request, 30, 300);
-  if (limited) return limited;
-
+  // No rate-limit check here -- composers_implementation.md §9.3. The
+  // budget is enforced once, in /api/media/init, which is the only route
+  // that can hand out a path this one will accept below.
   const body = await request.json().catch(() => ({}));
   const rawPath = typeof body.path === "string" ? body.path : "";
   // /api/media/init only ever generates paths under the caller's own id;

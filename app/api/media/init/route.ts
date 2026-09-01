@@ -23,15 +23,22 @@ const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg", "imag
 // just being slow, trading one failure mode for a worse one. Revisit if/when
 // video gets real async processing (Phase 8+).
 //
-// Rate limit shares the same "media" key/budget as POST /api/media and
-// POST /api/media/complete -- one combined anti-abuse pool across every
-// storage-write path, matching the original single-route behavior rather
-// than multiplying the effective quota by splitting it into steps.
+// Rate limit shares the same "media" key/budget as POST /api/media -- one
+// combined anti-abuse pool across every storage-write path.
+//
+// composers_implementation.md §9.3 -- this used to also be checked in
+// POST /api/media/complete with the SAME key, so every photo cost 2 of the
+// budget instead of 1 (one init + one complete per file). A 10-photo post
+// cost 20; a second one in the same window failed mid-publish, after some
+// photos had already uploaded. Fixed by checking it here ONLY --
+// /api/media/complete is unreachable without a signed path this route
+// issued, so it isn't an independent abuse surface -- and raising the
+// budget to cover two full 10-photo posts plus a few retries.
 export const POST = timeRoute("media.init", async (request: NextRequest) => {
   const user = await getServerUser(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const limited = await enforceRateLimit("media", user.id, request, 30, 300);
+  const limited = await enforceRateLimit("media", user.id, request, 60, 300);
   if (limited) return limited;
 
   const body = await request.json().catch(() => ({}));

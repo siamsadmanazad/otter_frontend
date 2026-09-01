@@ -37,8 +37,10 @@ export const POST = timeRoute("media", async (request: NextRequest) => {
   const user = await getServerUser(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Upload cap: 30 / 5 min per user (anti-abuse on storage).
-  const allowed = await isAllowed(limitKey("media", user.id, request), 30, 300);
+  // Upload cap: 60 / 5 min per user (anti-abuse on storage). Shares the
+  // "media" key/budget with /api/media/init (composers_implementation.md
+  // §9.3) -- kept in sync with that route's limit.
+  const allowed = await isAllowed(limitKey("media", user.id, request), 60, 300);
   if (!allowed) {
     return NextResponse.json(
       { error: "Too many uploads. Please wait a moment and try again." },
