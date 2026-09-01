@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createActorClient } from "@/lib/supabase/server";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
+import { validateTypeFields, validateServiceForm, type OfferingType } from "@/lib/api/offering-fields";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TYPES = new Set(["TOUR", "STAY", "EVENT", "CLASS", "RENTAL", "GUIDE", "TRANSPORT", "TABLE"]);
@@ -23,7 +24,12 @@ export async function GET(request: NextRequest): Promise<Response> {
     const { data, error } = await db
       .from("offerings")
       .select(
-        "id, type, status, title, description, images, niche_id, price_mode, price_cents, currency, booking_mode, external_url, always_available, starts_at, ends_at, capacity, place_id, lat, lng, created_at"
+        // B.4 read half -- the depth fields the detail screen renders. Kept as an
+        // explicit list rather than `*`: this is the LIST endpoint, and a
+        // profile shelf of twenty services should not carry twenty itineraries.
+        // `itinerary` and `house_rules` are deliberately absent here and read
+        // on the detail screen instead.
+        "id, type, status, title, description, images, niche_id, price_mode, price_cents, currency, booking_mode, external_url, always_available, starts_at, ends_at, capacity, place_id, lat, lng, created_at, service_form, amenities, inclusions, exclusions, languages, cancellation_policy, min_party, max_party, check_in_time, check_out_time, min_nights, max_nights, bedrooms, beds, bathrooms, duration_minutes, meeting_point, instant_book"
       )
       .eq("owner_profile_id", ownerId)
       .order("created_at", { ascending: false });
@@ -68,6 +74,24 @@ export async function GET(request: NextRequest): Promise<Response> {
       lat: o.lat,
       lng: o.lng,
       createdAt: o.created_at,
+      serviceForm: o.service_form,
+      amenities: o.amenities ?? [],
+      inclusions: o.inclusions ?? [],
+      exclusions: o.exclusions ?? [],
+      languages: o.languages ?? [],
+      cancellationPolicy: o.cancellation_policy,
+      minParty: o.min_party,
+      maxParty: o.max_party,
+      checkInTime: o.check_in_time,
+      checkOutTime: o.check_out_time,
+      minNights: o.min_nights,
+      maxNights: o.max_nights,
+      bedrooms: o.bedrooms,
+      beds: o.beds,
+      bathrooms: o.bathrooms,
+      durationMinutes: o.duration_minutes,
+      meetingPoint: o.meeting_point,
+      instantBook: o.instant_book,
       isSaved: savedIds.has(o.id),
     }));
 
@@ -154,10 +178,23 @@ export async function POST(request: NextRequest): Promise<Response> {
       externalUrl = url;
     }
 
+    // B.4 -- the depth fields, validated against the type that owns them.
+    // Returns a column patch; anything belonging to another type is refused
+    // by name so the host reads "Only a stay has bedrooms" rather than a
+    // constraint identifier.
+    const typed = validateTypeFields(body, type as OfferingType);
+    if ("error" in typed) return fail(typed.error, 400);
+
     const db = await createActorClient(request);
+
+    const form = await validateServiceForm(db, body.serviceForm, type as OfferingType);
+    if ("error" in form) return fail(form.error, 400);
+
     const { data, error } = await db
       .from("offerings")
       .insert({
+        ...typed.patch,
+        service_form: form.value,
         owner_profile_id: user.profileId,
         type,
         status: "ACTIVE",
