@@ -17,7 +17,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   try {
     const body = await request.json();
     const offeringId = typeof body?.offeringId === "string" ? body.offeringId : "";
-    if (!UUID_RE.test(offeringId)) return fail("Invalid offering", 400);
+    if (!UUID_RE.test(offeringId)) return fail("Invalid service", 400);
 
     const db = await createActorClient(request);
     const { data, error } = await db.rpc("reactivate_offering", {

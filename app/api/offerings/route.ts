@@ -71,7 +71,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       isSaved: savedIds.has(o.id),
     }));
 
-    return ok(mapped, "Offerings retrieved");
+    return ok(mapped, "Services retrieved");
   } catch (e) {
     console.error("GET /api/offerings error:", e);
     return fail("Internal server error", 500);
@@ -118,10 +118,10 @@ export async function POST(request: NextRequest): Promise<Response> {
     const startsAt = typeof body.startsAt === "string" ? body.startsAt : null;
     const endsAt = typeof body.endsAt === "string" ? body.endsAt : null;
     if (alwaysAvailable && (startsAt || endsAt)) {
-      return fail("An always-available offering cannot have dates", 400);
+      return fail("An always-available service cannot have dates", 400);
     }
     if (!alwaysAvailable && !startsAt) {
-      return fail("A dated offering needs a start time (or mark it always available)", 400);
+      return fail("A dated service needs a start time (or mark it always available)", 400);
     }
     if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) {
       return fail("endsAt must be after startsAt", 400);
@@ -189,7 +189,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       return fail(error.message, status);
     }
 
-    return ok({ id: data.id }, "Offering created");
+    return ok({ id: data.id }, "Service created");
   } catch (e) {
     console.error("POST /api/offerings error:", e);
     return fail("Internal server error", 500);

@@ -38,7 +38,7 @@ export async function buildProfilePayload(
   const allowed = await canViewProfile(db, viewerIdForSelfCheck, userId, profile.preferences);
 
   const isBusiness = profile.kind === "BUSINESS";
-  const [posts, comments, followers, following, businessRow, placeRow] = await Promise.all([
+  const [posts, comments, followers, following, businessRow, placeRow, serviceCount] = await Promise.all([
     db.from("posts").select("id", { count: "exact", head: true }).eq("owner_id", userId),
     db.from("comments").select("id", { count: "exact", head: true }).eq("owner_id", userId),
     db.from("follows").select("follower_id", { count: "exact", head: true }).eq("following_id", userId),
@@ -69,6 +69,17 @@ export async function buildProfilePayload(
           .order("claimed_at", { ascending: true })
           .limit(20)
       : Promise.resolve({ data: [], error: null }),
+    // bussinesstemplate.md A.5 -- how many services this business has live.
+    // ACTIVE only: a visitor's stat row must never count the drafts and
+    // paused listings only the owner can see. head+count, so this costs a
+    // count and returns no rows.
+    isBusiness
+      ? db
+          .from("offerings")
+          .select("id", { count: "exact", head: true })
+          .eq("owner_profile_id", userId)
+          .eq("status", "ACTIVE")
+      : Promise.resolve({ count: 0 }),
   ]);
 
   const countErrors = [posts.error, comments.error, followers.error, following.error].filter(Boolean);
@@ -130,6 +141,8 @@ export async function buildProfilePayload(
             // array (possibly empty), never absent, so the client can
             // check `places.length > 1` without a null check first.
             places: places.map(mapPlace),
+            // A.5 -- the one number a customer actually wants from a venue.
+            serviceCount: serviceCount.count ?? 0,
           },
         }
       : {}),

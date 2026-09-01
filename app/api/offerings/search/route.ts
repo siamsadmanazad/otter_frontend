@@ -55,7 +55,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     });
     if (error) return fail(error.message, 500);
 
-    return ok(data ?? [], "Offerings search results");
+    return ok(data ?? [], "Services search results");
   } catch (e) {
     console.error("GET /api/offerings/search error:", e);
     return fail("Internal server error", 500);

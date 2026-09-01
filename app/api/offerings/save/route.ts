@@ -16,7 +16,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   try {
     const body = await request.json();
     const offeringId = typeof body?.offeringId === "string" ? body.offeringId : "";
-    if (!UUID_RE.test(offeringId)) return fail("Invalid offering", 400);
+    if (!UUID_RE.test(offeringId)) return fail("Invalid service", 400);
 
     const supabase = await createActorClient(request);
     const { data, error } = await supabase.rpc("toggle_saved_offering", {
@@ -24,14 +24,14 @@ export async function POST(request: NextRequest): Promise<Response> {
     });
     if (error) {
       if (/OFFERING_NOT_FOUND/i.test(error.message || "")) {
-        return fail("Offering not found", 404);
+        return fail("Service not found", 404);
       }
       return fail(error.message, 500);
     }
     return ok(data, "Saved");
   } catch (e) {
     console.error("POST /api/offerings/save error:", e);
-    return fail("Failed saving offering", 500);
+    return fail("Failed saving service", 500);
   }
 }
 
@@ -44,9 +44,9 @@ export async function GET(request: NextRequest): Promise<Response> {
     const supabase = await createActorClient(request);
     const { data, error } = await supabase.rpc("get_saved_offerings");
     if (error) return fail(error.message, 500);
-    return ok(data ?? [], "Saved offerings");
+    return ok(data ?? [], "Saved services");
   } catch (e) {
     console.error("GET /api/offerings/save error:", e);
-    return fail("Failed loading saved offerings", 500);
+    return fail("Failed loading saved services", 500);
   }
 }
