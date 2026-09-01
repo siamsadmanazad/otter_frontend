@@ -40,7 +40,12 @@ export const GET = timeRoute("posts", async (request: NextRequest): Promise<Resp
         .from("posts")
         .select("id")
         .eq("owner_id", owner)
-        .order("created_at", { ascending: false })
+        // Backdating: a profile is someone's history, so it sorts on WHEN IT
+        // HAPPENED. `happened_at` is null for everything not backdated, which
+        // is why this coalesces rather than sorting on it directly. The FEED
+        // still sorts on created_at -- a backdated Moment is new to your
+        // followers even when it is old to you.
+        .order("happened_at_effective", { ascending: false })
         .range(from, from + limit - 1);
       if (listErr) return fail(listErr.message, 500);
       const ids = ((rows ?? []) as { id: string }[]).map((r) => r.id);
@@ -232,6 +237,26 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     // M6 -- trip window, JOURNAL-only, both-or-neither, ordered.
+    // Backdating (MOMENT-only): "when this happened", distinct from
+    // created_at, which stays honest about when it was published. Bounds
+    // mirror posts_happened_at_range_chk exactly.
+    let happenedAt: string | null = null;
+    if (body.happenedAt != null) {
+      if (typeof body.happenedAt !== "string") {
+        return fail("happenedAt must be an ISO date string", 400);
+      }
+      if (genre !== "MOMENT") {
+        return fail("Only a Moment can be backdated", 400);
+      }
+      const when = new Date(body.happenedAt);
+      if (Number.isNaN(when.getTime())) return fail("happenedAt is not a valid date", 400);
+      if (when.getTime() > Date.now()) return fail("A moment can't have happened in the future", 400);
+      if (when.getTime() < Date.parse("2000-01-01T00:00:00Z")) {
+        return fail("That date is too far in the past", 400);
+      }
+      happenedAt = when.toISOString();
+    }
+
     const tripStart: string | null = typeof body.tripStart === "string" ? body.tripStart : null;
     const tripEnd: string | null = typeof body.tripEnd === "string" ? body.tripEnd : null;
     if ((tripStart || tripEnd) && genre !== "JOURNAL") {
@@ -291,6 +316,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         topic_niche_id: topicNicheId,
         trip_start: tripStart,
         trip_end: tripEnd,
+        happened_at: happenedAt,
         post_type: genre,
         tribe_id: tribeId,
       })
