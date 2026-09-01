@@ -193,6 +193,23 @@ export async function POST(request: NextRequest): Promise<Response> {
     if ("error" in placeValidation) return fail(placeValidation.error, 400);
     const { placeTrail, topicNicheId } = placeValidation;
 
+    // bussinesstemplate.md D4 -- the JOURNAL genre is EXPLORER-only. A
+    // business keeps Moment and Post (G1: listings alone give a host no
+    // organic reach), but a travelogue is a traveller's form. One indexed
+    // lookup, and only on the genre that needs it. The DB trigger
+    // posts_reject_journal_for_business is the backstop for anything that
+    // reaches PostgREST directly.
+    if (genre === "JOURNAL") {
+      const { data: actor } = await db
+        .from("profiles")
+        .select("kind")
+        .eq("id", user.profileId)
+        .maybeSingle();
+      if (actor?.kind === "BUSINESS") {
+        return fail("A business profile can't publish a Journal", 403);
+      }
+    }
+
     // Title -- required non-empty for POST, optional for JOURNAL (M5),
     // forbidden for MOMENT (posts_title_by_genre_chk mirrors this exactly).
     const rawTitle: string | undefined = typeof body.title === "string" ? body.title : undefined;
