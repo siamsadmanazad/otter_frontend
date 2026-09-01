@@ -117,7 +117,7 @@ async function validatePlaceAndAltTexts(
   body: Record<string, unknown>,
   images: string[],
   genre: "MOMENT" | "JOURNAL" | "POST"
-): Promise<{ error: string } | { placeTrail: PlaceTrailEntry[] }> {
+): Promise<{ error: string } | { placeTrail: PlaceTrailEntry[]; topicNicheId: string | null }> {
   const altTexts: string[] = Array.isArray(body.altTexts) ? (body.altTexts as string[]) : [];
   if (altTexts.length > 0 && altTexts.length !== images.length) {
     return { error: "Alt text must be provided for every photo or none" };
@@ -154,7 +154,20 @@ async function validatePlaceAndAltTexts(
     return { error: "A place trail can carry at most 5 places" };
   }
 
-  return { placeTrail: placeTrailRaw };
+  // M4 (composers_implementation.md) -- the topic lane, POST-only.
+  const topicNicheId = typeof body.topicNicheId === "string" ? body.topicNicheId : null;
+  if (topicNicheId) {
+    if (genre !== "POST") return { error: "Only a Post can have a topic" };
+    const { data: nicheRow } = await db
+      .from("niches")
+      .select("id")
+      .eq("id", topicNicheId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (!nicheRow) return { error: "That topic no longer exists" };
+  }
+
+  return { placeTrail: placeTrailRaw, topicNicheId };
 }
 
 // POST /api/posts -> create post (owner = authenticated user)
@@ -178,7 +191,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     const placeValidation = await validatePlaceAndAltTexts(db, body, images, genre);
     if ("error" in placeValidation) return fail(placeValidation.error, 400);
-    const { placeTrail } = placeValidation;
+    const { placeTrail, topicNicheId } = placeValidation;
 
     if (genre === "POST") {
       // Posts are title-led (feed_genres.md §1.2/§5.2) -- the DB constraint
@@ -237,6 +250,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         place_lng: typeof body.placeLng === "number" ? body.placeLng : null,
         h3_index: typeof body.h3Index === "string" ? body.h3Index : null,
         place_trail: placeTrail,
+        topic_niche_id: topicNicheId,
         post_type: genre,
         tribe_id: tribeId,
       })
