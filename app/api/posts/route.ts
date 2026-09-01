@@ -193,20 +193,41 @@ export async function POST(request: NextRequest): Promise<Response> {
     if ("error" in placeValidation) return fail(placeValidation.error, 400);
     const { placeTrail, topicNicheId } = placeValidation;
 
+    // Title -- required non-empty for POST, optional for JOURNAL (M5),
+    // forbidden for MOMENT (posts_title_by_genre_chk mirrors this exactly).
+    const rawTitle: string | undefined = typeof body.title === "string" ? body.title : undefined;
+    let resolvedTitle: string | null = null;
     if (genre === "POST") {
-      // Posts are title-led (feed_genres.md §1.2/§5.2) -- the DB constraint
-      // enforces this too (posts_title_by_genre_chk), but a clear 400 here
-      // beats a raw constraint-violation string reaching the client.
-      const title: string | undefined = body.title;
-      if (!title || !title.trim()) {
+      // Posts are title-led (feed_genres.md §1.2/§5.2).
+      if (!rawTitle || !rawTitle.trim()) {
         return fail("A Post needs a title", 400);
       }
-      // feed_genres.md Phase 10.1 -- title had no length cap at all (a new
-      // field, nothing pre-existing to preserve compat with); posts_title_length_chk
-      // is the DB-level backstop, same defence-in-depth pattern as the checks below.
-      if (title.trim().length > 300) {
-        return fail("A Post title can be at most 300 characters", 400);
-      }
+      resolvedTitle = rawTitle.trim();
+    } else if (genre === "JOURNAL") {
+      if (rawTitle?.trim()) resolvedTitle = rawTitle.trim();
+    } else if (rawTitle?.trim()) {
+      return fail("A Moment can't have a title", 400);
+    }
+    // feed_genres.md Phase 10.1 -- posts_title_length_chk is the DB-level
+    // backstop, same defence-in-depth pattern as every other check here.
+    if (resolvedTitle && resolvedTitle.length > 300) {
+      return fail("A title can be at most 300 characters", 400);
+    }
+
+    // M6 -- trip window, JOURNAL-only, both-or-neither, ordered.
+    const tripStart: string | null = typeof body.tripStart === "string" ? body.tripStart : null;
+    const tripEnd: string | null = typeof body.tripEnd === "string" ? body.tripEnd : null;
+    if ((tripStart || tripEnd) && genre !== "JOURNAL") {
+      return fail("Only a Journal can have trip dates", 400);
+    }
+    if ((tripStart === null) !== (tripEnd === null)) {
+      return fail("A trip needs both a start and an end date", 400);
+    }
+    if (tripStart && tripEnd && tripEnd < tripStart) {
+      return fail("Trip end can't be before the start", 400);
+    }
+
+    if (genre === "POST") {
       if ((!caption || !caption.trim()) && images.length === 0) {
         return fail("Add a body, or at least a title, to your Post", 400);
       }
@@ -230,7 +251,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           return fail("Posts can't be created inside a private tribe", 403);
         }
       }
-    } else if (!caption?.trim() && images.length === 0) {
+    } else if (!caption?.trim() && images.length === 0 && !resolvedTitle) {
       return fail("At least one of caption or image is required", 400);
     }
 
@@ -241,7 +262,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         images,
         alt_texts: Array.isArray(body.altTexts) ? body.altTexts : [],
         caption: caption ?? null,
-        title: genre === "POST" ? (body.title as string).trim() : null,
+        title: resolvedTitle,
         link: genre === "POST" ? body.link ?? null : null,
         location: body.location ?? null,
         place_id: typeof body.placeId === "string" ? body.placeId : null,
@@ -251,6 +272,8 @@ export async function POST(request: NextRequest): Promise<Response> {
         h3_index: typeof body.h3Index === "string" ? body.h3Index : null,
         place_trail: placeTrail,
         topic_niche_id: topicNicheId,
+        trip_start: tripStart,
+        trip_end: tripEnd,
         post_type: genre,
         tribe_id: tribeId,
       })
