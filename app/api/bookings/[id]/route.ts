@@ -38,7 +38,20 @@ export async function GET(
     if (error) return fail(error.message, 500);
     if (!data) return fail("Booking not found", 404);
 
-    return ok(mapBooking(data), "Booking retrieved");
+    // E.10: the platform take-rate, so a price breakdown can name it without
+    // a second round trip. Additive (S16) -- an old client that never reads
+    // this field is unaffected. The RATE is public (platform_fee_settings is
+    // world-readable); what this particular booking was charged lives on its
+    // ledger row behind the ledger's own RLS, and is deliberately not here.
+    const { data: feeSettings } = await db
+      .from("platform_fee_settings")
+      .select("fee_bps")
+      .maybeSingle();
+
+    return ok(
+      { ...mapBooking(data), platformFeeBps: feeSettings?.fee_bps ?? 0 },
+      "Booking retrieved"
+    );
   } catch (e) {
     console.error("GET /api/bookings/[id] error:", e);
     return fail("Internal server error", 500);
