@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { createActorClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/http";
 import { mapReview } from "@/lib/api/review-mapper";
 
@@ -104,6 +105,39 @@ export async function GET(
     const { data, error, count } = await query.range(from, from + limit - 1);
     if (error) return fail(error.message, 500);
 
+    // F.6 (Flutter review card, §6): "the stay/trip date (not the post
+    // date)" -- that's the BOOKING's slot_starts_at, which mapReview() never
+    // carries (it's shared with the create/patch/reply routes, which have
+    // no booking row in hand).
+    //
+    // ⚠️ THIS CANNOT BE A PLAIN EMBED ON THE QUERY ABOVE. `db` here is
+    // whatever createActorClient() resolved to -- the anon-key client for
+    // this route's own no-auth majority case (D18: reviews are public) --
+    // and `bookings_select_own` (RLS) only lets the BUYER or the BUSINESS
+    // read a booking row. A `bookings!...(slot_starts_at)` embed under the
+    // actor client silently returns null for every anonymous or
+    // third-party viewer, i.e. almost every real caller of this route --
+    // caught live: a real review posted and fetched through this exact
+    // route came back with `stayDate: null` until this was split out.
+    // Reviews and their authors are ALREADY fully public here (D18; the
+    // author join two lines up exposes name + avatar with no gate at all),
+    // so a booking's bare start time carries no privacy exposure this route
+    // doesn't already have — a scoped admin-client lookup for just this one
+    // column, keyed to the booking ids already on this page, is the
+    // narrowest fix that actually works rather than pretending the actor
+    // client's RLS was ever going to answer this.
+    const bookingIds = [...new Set((data ?? []).map((r) => r.booking_id as string))];
+    let slotStartsById = new Map<string, string | null>();
+    if (bookingIds.length > 0) {
+      const admin = createAdminClient();
+      const { data: bookingRows, error: bookingErr } = await admin
+        .from("bookings")
+        .select("id, slot_starts_at")
+        .in("id", bookingIds);
+      if (bookingErr) return fail(bookingErr.message, 500);
+      slotStartsById = new Map((bookingRows ?? []).map((b) => [b.id as string, b.slot_starts_at as string | null]));
+    }
+
     const reviews = (data ?? []).map((r) => {
       const mapped = mapReview(r as Record<string, unknown>);
       const author = (r as Record<string, unknown>).author as
@@ -119,6 +153,11 @@ export async function GET(
               profileImage: author.profile_image,
             }
           : null,
+        // Null only if the booking itself was hard-deleted, which
+        // booking_id's `on delete restrict` makes impossible while a review
+        // referencing it exists -- or the lookup above simply found nothing,
+        // which the map's absence handles the same honest way.
+        stayDate: slotStartsById.get(r.booking_id as string) ?? null,
       };
     });
 
