@@ -5,10 +5,16 @@ import { logPaymentEvent } from "@/lib/payments/audit";
 import {
   decimalStringToMinor,
   isPaidStatus,
+  isRefundInFlightStatus,
+  isRefundSettledStatus,
+  refundApiAnswered,
   sslcommerzConfig,
+  sslcommerzInitiateRefund,
   sslcommerzQueryByTranId,
+  sslcommerzRefundQuery,
   sslcommerzValidate,
 } from "@/lib/payments/sslcommerz";
+import type { SslcommerzConfig } from "@/lib/payments/sslcommerz";
 
 // GET /api/cron/reconcile-payments — Vercel Cron only (see vercel.json).
 //
@@ -261,6 +267,8 @@ export const GET = timeRoute("cron.reconcilePayments", async (request: NextReque
     }
   }
 
+  const refunds = await sweepUnsettledRefunds(db, cfg);
+
   return NextResponse.json({
     ok: true,
     scanned: stuck.length,
@@ -269,5 +277,253 @@ export const GET = timeRoute("cron.reconcilePayments", async (request: NextReque
     expired,
     stillPending,
     errors,
+    refunds,
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// E.7 · the refund half of the same sweep
+// ════════════════════════════════════════════════════════════════════════════
+// ⚠️ WHY THIS LIVES HERE AND NOT IN ITS OWN CRON FILE.
+// SSLCommerz's refund API answers `processing` for a refund it has accepted
+// but not settled, so E.7 has exactly the problem E.6 was built for, pointed
+// the other way: a money movement whose outcome arrives later than the call
+// that started it, with no callback. A second cron route would duplicate this
+// file's CRON_SECRET check, its config load, its "APIConnect is a separate
+// question from status" discipline and its captureRouteError plumbing, to run
+// one more loop against the same host on the same schedule — and the two would
+// then drift, which is the "change one, change all three" shape B.6 already
+// had to write a warning about.
+//
+// The 15-minute cadence suits both. Nothing here is time-critical the way the
+// payment sweep is (there, frequency is the difference between recovering a
+// payment and owing one back); a refund settling 15 minutes late costs a guest
+// nothing but a refresh.
+//
+// TWO KINDS OF ROW ARE PICKED UP:
+//
+//   PROCESSING  the gateway accepted it and gave us a refund_ref_id.
+//               inquiryRefund tells us whether it settled.
+//
+//   INITIATED   we never got a usable answer at all — the refund route found
+//               the gateway unreachable, or APIConnect was not DONE, or the
+//               process died between refund_booking() and the gateway call.
+//               ⚠️ These are the dangerous ones: we do not know whether a
+//               refund exists at SSLCommerz. Re-initiating blind could refund
+//               twice. So an INITIATED row is re-initiated with the SAME
+//               refe_id — our own idempotency handle, which is precisely what
+//               refe_id is for — and only after a grace period long enough
+//               that an in-flight first attempt has certainly finished.
+
+const REFUND_STUCK_AFTER_MINUTES = 15;
+const REFUND_MAX_PER_RUN = 25;
+// A refund the gateway has never resolved after this long is not settling on
+// its own. It stays PROCESSING (never silently FAILED — the money may well
+// have moved) and is escalated to a human instead.
+const REFUND_ESCALATE_AFTER_HOURS = 24;
+
+interface UnsettledRefund {
+  id: string;
+  booking_id: string;
+  amount_minor: number;
+  currency: string;
+  status: string;
+  refe_id: string;
+  provider_refund_ref_id: string | null;
+  reason: string | null;
+  created_at: string;
+}
+
+async function sweepUnsettledRefunds(
+  db: ReturnType<typeof createAdminClient>,
+  cfg: SslcommerzConfig
+): Promise<{ scanned: number; settled: number; stillProcessing: number; failed: number; errors: number }> {
+  const cutoff = new Date(Date.now() - REFUND_STUCK_AFTER_MINUTES * 60_000).toISOString();
+  const escalateBefore = new Date(
+    Date.now() - REFUND_ESCALATE_AFTER_HOURS * 3_600_000
+  ).toISOString();
+
+  const { data, error } = await db
+    .from("payment_refunds")
+    .select(
+      "id, booking_id, amount_minor, currency, status, refe_id, provider_refund_ref_id, reason, created_at"
+    )
+    .in("status", ["INITIATED", "PROCESSING"])
+    .lt("created_at", cutoff)
+    .order("created_at", { ascending: true })
+    .limit(REFUND_MAX_PER_RUN);
+
+  if (error) {
+    captureRouteError(`reconcile-refunds: ${error.message}`);
+    return { scanned: 0, settled: 0, stillProcessing: 0, failed: 0, errors: 1 };
+  }
+
+  const rows = (data ?? []) as UnsettledRefund[];
+  let settled = 0;
+  let stillProcessing = 0;
+  let failed = 0;
+  let errors = 0;
+
+  // The refund's own tran_id, for the audit rows. payment_events keys on
+  // tran_id, and a refund's audit trail belongs next to the payment it
+  // reverses rather than floating unattached.
+  const tranIdFor = async (bookingId: string): Promise<string | null> => {
+    const { data: intent } = await db
+      .from("payment_intents")
+      .select("tran_id")
+      .eq("booking_id", bookingId)
+      .eq("status", "VALID")
+      .maybeSingle();
+    return intent?.tran_id ?? null;
+  };
+
+  for (const refund of rows) {
+    try {
+      const tranId = await tranIdFor(refund.booking_id);
+
+      // ── Case 1: we hold a provider ref. Ask what happened to it. ─────────
+      let answer;
+      if (refund.provider_refund_ref_id) {
+        answer = await sslcommerzRefundQuery(cfg, refund.provider_refund_ref_id);
+      } else {
+        // ── Case 2: no provider ref. We never got a usable answer. ────────
+        // Re-initiate with the SAME refe_id. If a first attempt did land at
+        // SSLCommerz, they have already seen this reference; if it did not,
+        // this is the first real one. Either way it is ONE refund, which is
+        // the whole reason payment_refunds.refe_id is unique and frozen.
+        const { data: intent } = await db
+          .from("payment_intents")
+          .select("provider_bank_tran_id")
+          .eq("booking_id", refund.booking_id)
+          .eq("status", "VALID")
+          .maybeSingle();
+        const bankTranId = (intent?.provider_bank_tran_id ?? "").trim();
+        if (!bankTranId) {
+          errors++;
+          await logPaymentEvent({
+            tranId,
+            eventType: "REFUND_FAILED",
+            note: `Sweep: refund ${refund.refe_id} has no bank_tran_id to retry against — needs a human`,
+          });
+          captureRouteError(`reconcile-refunds: no bank_tran_id for ${refund.refe_id}`);
+          continue;
+        }
+        const call = await sslcommerzInitiateRefund(cfg, {
+          bankTranId,
+          amountMinor: Number(refund.amount_minor),
+          remarks: refund.reason || `Booking refund ${refund.refe_id}`,
+          refeId: refund.refe_id,
+        });
+        answer = call.result;
+      }
+
+      // ── APIConnect first, always. It is a different question. ────────────
+      if (!refundApiAnswered(answer)) {
+        stillProcessing++;
+        await logPaymentEvent({
+          tranId,
+          eventType: "REFUND_PROCESSING",
+          note: `Sweep: APIConnect=${answer.apiConnect || "(none)"} — learned nothing, left untouched`,
+        });
+        continue;
+      }
+
+      // ── Settled ──────────────────────────────────────────────────────────
+      if (isRefundSettledStatus(answer.status)) {
+        const providerRef = answer.refundRefId || refund.provider_refund_ref_id || "";
+        if (!providerRef) {
+          errors++;
+          await logPaymentEvent({
+            tranId,
+            eventType: "REFUND_FAILED",
+            payload: answer.raw,
+            note: `Sweep: settled but no refund_ref_id to record — cannot complete (payment_refunds_ref_id_chk)`,
+          });
+          continue;
+        }
+        const { data: done, error: rpcErr } = await db.rpc("complete_booking_refund", {
+          p_refund_id: refund.id,
+          p_provider_ref: providerRef,
+          p_response: answer.raw as never,
+        });
+        if (rpcErr) {
+          errors++;
+          await logPaymentEvent({
+            tranId,
+            eventType: "REFUND_FAILED",
+            payload: answer.raw,
+            note: `⚠️ Sweep: gateway settled but complete_booking_refund failed: ${(rpcErr.message ?? "").trim()}`,
+          });
+          captureRouteError(`reconcile-refunds: complete failed for ${refund.refe_id}`);
+          continue;
+        }
+        settled++;
+        await logPaymentEvent({
+          tranId,
+          eventType: "REFUND_SUCCEEDED",
+          payload: { gateway: answer.raw, result: done },
+          note: `Sweep settled a refund the route left unfinished · ${refund.amount_minor} ${refund.currency} minor`,
+        });
+        continue;
+      }
+
+      // ── Still in flight ──────────────────────────────────────────────────
+      if (isRefundInFlightStatus(answer.status)) {
+        stillProcessing++;
+        // A first-attempt row that has now been accepted: record the provider
+        // ref so the next run can inquire rather than re-initiate.
+        if (!refund.provider_refund_ref_id && answer.refundRefId) {
+          await db
+            .from("payment_refunds")
+            .update({
+              status: "PROCESSING",
+              provider_refund_ref_id: answer.refundRefId,
+              requested_at: new Date().toISOString(),
+              response_payload: answer.raw as never,
+            })
+            .eq("id", refund.id)
+            .in("status", ["INITIATED", "PROCESSING"]);
+        }
+        if (refund.created_at < escalateBefore) {
+          // ⚠️ NOT marked FAILED. After 24 hours we still do not know that the
+          // money did not move, and recording a refund as failed when it may
+          // have succeeded is how a guest gets refunded twice. Escalate.
+          await logPaymentEvent({
+            tranId,
+            eventType: "REFUND_PROCESSING",
+            payload: answer.raw,
+            note: `⚠️ Refund ${refund.refe_id} unresolved after ${REFUND_ESCALATE_AFTER_HOURS}h — left PROCESSING, needs a human`,
+          });
+          captureRouteError(`reconcile-refunds: ${refund.refe_id} unresolved >24h`);
+        }
+        continue;
+      }
+
+      // ── Refused ──────────────────────────────────────────────────────────
+      await db
+        .from("payment_refunds")
+        .update({
+          status: "FAILED",
+          provider_refund_ref_id: answer.refundRefId || refund.provider_refund_ref_id,
+          requested_at: new Date().toISOString(),
+          failed_at: new Date().toISOString(),
+          response_payload: answer.raw as never,
+        })
+        .eq("id", refund.id)
+        .in("status", ["INITIATED", "PROCESSING"]);
+      failed++;
+      await logPaymentEvent({
+        tranId,
+        eventType: "REFUND_FAILED",
+        payload: answer.raw,
+        note: `Sweep: gateway refused · status=${answer.status || "(none)"} reason=${answer.errorReason || "(none)"} — the guest is still owed money (I.2)`,
+      });
+      captureRouteError(`reconcile-refunds: refused ${refund.refe_id}: ${answer.errorReason}`);
+    } catch (e) {
+      errors++;
+      captureRouteError(`reconcile-refunds: ${refund.refe_id}: ${String(e)}`);
+    }
+  }
+
+  return { scanned: rows.length, settled, stillProcessing, failed, errors };
+}

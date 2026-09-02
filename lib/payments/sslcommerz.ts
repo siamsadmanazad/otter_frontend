@@ -313,6 +313,228 @@ export async function sslcommerzQueryByTranId(
   };
 }
 
+// ── 4. Refunds (E.7) ────────────────────────────────────────────────────────
+//
+// ════════════════════════════════════════════════════════════════════════════
+// ⚠️ THE REFUND ENDPOINT IS THE SAME URL AS THE TRANSACTION QUERY. THIS IS
+//    REAL, IT IS NOT A DOCUMENTATION ERROR, AND IT IS DANGEROUS.
+// ════════════════════════════════════════════════════════════════════════════
+// The published docs name merchantTransIDvalidationAPI.php for refunds, which
+// reads like a scraping mistake — a read-only query endpoint and a
+// money-moving refund endpoint sharing one URL is not a shape anyone designs
+// on purpose. It was verified three independent ways before this was written,
+// because getting it wrong in either direction is expensive:
+//
+//   1. SSLCommerz's own Node SDK (github.com/sslcommerz/SSLCommerz-NodeJS,
+//      api/payment-controller.js) sets refundURL, refundQueryURL,
+//      transactionQueryBySessionIdURL and transactionQueryByTransactionIdURL
+//      to the SAME string. Four names, one URL, in the vendor's own code.
+//   2. The endpoint is a NuSOAP service. GET it with no dispatching parameter
+//      and it renders its own operation list: initiateRefund, inquiryRefund,
+//      checkValidation, checkMerchantTransId, checkMerchantTransIdSignKey,
+//      checkSsessionKey — every one with
+//      `Endpoint: .../validator/api/merchantTransIDvalidationAPI.php`.
+//      initiateRefund's declared parts are exactly
+//      bank_tran_id / refund_amount / refund_remarks / refe_id /
+//      store_Id / store_Passwd.
+//   3. Live calls against the sandbox (testbox/qwerty), below.
+//
+//   Also checked and FALSE: initiateRefund.php and refundQuery.php are 404.
+//   Those plausible-looking v3-style URLs do not exist.
+//
+// ── ⚠️ DISPATCH IS BY PARAMETER PRESENCE, AND REFUND WINS ───────────────────
+// Observed, and the single most dangerous property of this endpoint:
+//
+//     tran_id=X                              -> transaction query
+//     refund_ref_id=X                        -> refund status query
+//     bank_tran_id=X & refund_amount=N       -> INITIATES A REFUND
+//     tran_id=X & bank_tran_id=Y & refund_amount=N
+//                                            -> INITIATES A REFUND
+//
+// A tran_id in the query string does NOT protect you. If
+// sslcommerzQueryByTranId() ever grew a bank_tran_id and a refund_amount
+// parameter — by a careless refactor that merged these functions "since they
+// share a URL" — E.6's reconciliation sweep would silently start refunding
+// every payment it inspected. That is why these are four separate functions
+// with four disjoint parameter sets and no shared builder, despite the
+// duplicated host string. DO NOT MERGE THEM.
+//
+// ── THE TWO INDEPENDENT FAILURE AXES ────────────────────────────────────────
+// Exactly as E.6 found for the transaction query, and for the same reason
+// (they must lead to opposite decisions):
+//
+//   APIConnect  DONE            we asked and got an answer; read `status`
+//               FAILED          our credentials were rejected (observed with
+//                               a deliberately wrong store_passwd)
+//               INVALID_REQUEST our parameters did not form a valid call
+//                               (observed: bank_tran_id with no refund_amount,
+//                               and refund_amount=0)
+//
+//   status      success         refunded
+//               processing      accepted, not settled — poll inquiryRefund
+//               failed          refused; `errorReason` says why
+//
+// Anything other than APIConnect=DONE means WE LEARNED NOTHING about the
+// money. It must never be recorded as a failed refund, only as an unfinished
+// one, or a transient credential blip would strand a guest's money.
+//
+// ── OBSERVED SANDBOX RESPONSES (fabricated inputs, 2026-09-02) ──────────────
+//   initiate, unknown bank_tran_id:
+//     {"APIConnect":"DONE","bank_tran_id":"FAKE…","status":"failed",
+//      "errorReason":"Invalid Request"}
+//   initiate, bank_tran_id but no refund_amount (or refund_amount=0):
+//     {"APIConnect":"INVALID_REQUEST","bank_tran_id":"FAKE…"}
+//   initiate, wrong store_passwd:
+//     {"APIConnect":"FAILED","bank_tran_id":"FAKE…"}
+//   inquiry, unknown refund_ref_id:
+//     {"APIConnect":"DONE","bank_tran_id":"","tran_id":"",
+//      "initiated_on":"0000-00-00 00:00:00","refunded_on":"0000-00-00 00:00:00",
+//      "status":"failed","refund_ref_id":"FAKE…",
+//      "errorReason":"Unknown Refund Ref ID"}
+//
+// ⚠️ NOT verified: the success path. It needs a genuinely completed sandbox
+// payment to produce a real bank_tran_id, which needs interactive card entry
+// on the gateway page — the same honest limitation E.4 and E.6 both recorded.
+// `refund_ref_id` on success, and the `refunded`/`processing`/`cancelled`
+// statuses from inquiryRefund, are taken from the vendor docs, not observed.
+//
+// ── ⚠️ THE DOCS' `refund_trans_id` DOES NOT EXIST ───────────────────────────
+// SSLCommerz's own parameter table lists `refund_trans_id` as the merchant's
+// unique refund id. The WSDL and the vendor SDK both say `refe_id`, and a call
+// sending refund_trans_id instead of refe_id is accepted but the field is
+// ignored. We send `refe_id`, which is what payment_refunds.refe_id holds.
+
+const REFUND_PATH = "/validator/api/merchantTransIDvalidationAPI.php";
+
+export interface SslcommerzRefundResult {
+  /** DONE = the gateway answered. Anything else = we learned nothing. */
+  apiConnect: string;
+  /** "success" | "processing" | "failed" | "" — only meaningful when apiConnect is DONE. */
+  status: string;
+  refundRefId: string;
+  bankTranId: string;
+  tranId: string;
+  errorReason: string;
+  raw: Record<string, unknown>;
+}
+
+/** The gateway answered us at all. Never conflate this with "the refund worked". */
+export function refundApiAnswered(r: { apiConnect: string }): boolean {
+  return r.apiConnect.trim().toUpperCase() === "DONE";
+}
+
+/** Settled: the money is back with the payer. */
+export function isRefundSettledStatus(status: string): boolean {
+  const s = status.trim().toLowerCase();
+  return s === "success" || s === "refunded";
+}
+
+/** Accepted but not settled. Poll sslcommerzRefundQuery() until it resolves. */
+export function isRefundInFlightStatus(status: string): boolean {
+  const s = status.trim().toLowerCase();
+  return s === "processing" || s === "pending" || s === "initiated";
+}
+
+/**
+ * Shared response reader. Both operations answer with the same envelope shape
+ * and the same two failure axes, and — as with sslcommerzInit — a call whose
+ * parameters do not dispatch falls through to the endpoint's own NuSOAP HTML
+ * page rather than to JSON, so a parse failure is a normal outcome to handle
+ * and not an exception to throw.
+ */
+async function readRefundResponse(res: Response): Promise<SslcommerzRefundResult> {
+  const text = await res.text();
+  let raw: Record<string, unknown>;
+  try {
+    raw = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return {
+      apiConnect: "",
+      status: "",
+      refundRefId: "",
+      bankTranId: "",
+      tranId: "",
+      errorReason: `Non-JSON response (HTTP ${res.status})`,
+      // Bounded, like sslcommerzInit's: the NuSOAP page is ~10KB of HTML and
+      // none of it belongs in a jsonb column.
+      raw: { httpStatus: res.status, body: text.slice(0, 2000) },
+    };
+  }
+  const str = (k: string) => (typeof raw[k] === "string" ? (raw[k] as string) : "");
+  return {
+    apiConnect: str("APIConnect"),
+    status: str("status"),
+    refundRefId: str("refund_ref_id"),
+    bankTranId: str("bank_tran_id"),
+    // The initiate response calls it trans_id; the inquiry response calls it
+    // tran_id. Read both rather than picking one and getting an empty string
+    // on whichever call we guessed wrong about.
+    tranId: str("tran_id") || str("trans_id"),
+    errorReason: str("errorReason"),
+    raw,
+  };
+}
+
+/**
+ * Initiate a refund against a completed payment's `bank_tran_id`.
+ *
+ * `amountMinor` is integer poisha and is converted at the wire boundary by
+ * minorToDecimalString(), the same as every other amount in this file. There
+ * is no overload taking a decimal, deliberately.
+ *
+ * Returns the redacted request fields alongside the result so the caller can
+ * persist exactly what was sent (S7) without rebuilding it and drifting.
+ */
+export async function sslcommerzInitiateRefund(
+  cfg: SslcommerzConfig,
+  args: { bankTranId: string; amountMinor: number; remarks: string; refeId: string }
+): Promise<{ result: SslcommerzRefundResult; auditFields: Record<string, string> }> {
+  const fields: Record<string, string> = {
+    bank_tran_id: args.bankTranId,
+    refund_amount: minorToDecimalString(args.amountMinor),
+    // 255 chars per the docs; a host's free-text reason is truncated rather
+    // than allowed to make the whole call malformed.
+    refund_remarks: (args.remarks || "TripOtter booking refund").slice(0, 255),
+    refe_id: args.refeId,
+    store_id: cfg.storeId,
+    store_passwd: cfg.storePasswd,
+    v: "1",
+    format: "json",
+  };
+
+  const res = await fetch(`${cfg.host}${REFUND_PATH}?${new URLSearchParams(fields)}`, {
+    method: "GET",
+    signal: AbortSignal.timeout(20_000),
+  });
+
+  return { result: await readRefundResponse(res), auditFields: redactForAudit(fields) };
+}
+
+/**
+ * Ask what happened to a refund we already initiated.
+ *
+ * Takes ONLY refund_ref_id (plus credentials) — no bank_tran_id, no
+ * refund_amount. That is not tidiness: adding either would flip this call from
+ * an inquiry into a second refund. See the dispatch note above.
+ */
+export async function sslcommerzRefundQuery(
+  cfg: SslcommerzConfig,
+  refundRefId: string
+): Promise<SslcommerzRefundResult> {
+  const qs = new URLSearchParams({
+    refund_ref_id: refundRefId,
+    store_id: cfg.storeId,
+    store_passwd: cfg.storePasswd,
+    v: "1",
+    format: "json",
+  });
+  const res = await fetch(`${cfg.host}${REFUND_PATH}?${qs}`, {
+    method: "GET",
+    signal: AbortSignal.timeout(20_000),
+  });
+  return readRefundResponse(res);
+}
+
 /** VALID and VALIDATED both mean paid — E.1's enum collapses them to VALID. */
 export function isPaidStatus(status: string): boolean {
   const s = status.trim().toUpperCase();

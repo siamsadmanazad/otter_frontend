@@ -40,6 +40,44 @@ const BOOKING_ERRORS: Record<string, { status: number; message: string }> = {
   FORBIDDEN: { status: 403, message: "You don't have permission to do that." },
   ALREADY_DECIDED: { status: 409, message: "This request has already been responded to." },
   NOT_CANCELLABLE: { status: 409, message: "This booking can no longer be cancelled." },
+
+  // ── E.7 refunds (refund_booking / complete_booking_refund) ────────────────
+  // Every one of these is a sentence a HOST reads, not a guest -- E.7 is
+  // host-only (S14) -- so they say what the host can do about it rather than
+  // apologising. None of them name an amount the host did not already see.
+  REFUND_INVALID_REQUEST: { status: 400, message: "That refund request is missing something." },
+  REFUND_NOTHING_TO_REFUND: {
+    status: 409,
+    message: "No payment was ever collected for this booking, so there's nothing to refund.",
+  },
+  REFUND_NO_BANK_TRAN_ID: {
+    status: 409,
+    message: "This payment has no bank reference yet, so it can't be refunded automatically.",
+  },
+  REFUND_NOT_REFUNDABLE: {
+    status: 409,
+    message: "This booking's cancellation policy doesn't return anything at this point.",
+  },
+  REFUND_BOOKING_NOT_REFUNDABLE: {
+    status: 409,
+    message: "This booking isn't in a state that can be refunded.",
+  },
+  REFUND_BOOKING_COMPLETED: {
+    status: 409,
+    message: "This booking has already been completed. Refunding it now needs a dispute.",
+  },
+  REFUND_ALREADY_REFUNDED: { status: 409, message: "This booking has already been refunded." },
+  REFUND_EXCEEDS_PAYMENT: { status: 409, message: "A refund can't be more than what was paid." },
+  REFUND_BOOKING_STATE_CHANGED: {
+    status: 409,
+    message: "This booking changed while the refund was running. Reload and try again.",
+  },
+  REFUND_NOT_FOUND: { status: 404, message: "That refund doesn't exist." },
+  REFUND_ALREADY_FAILED: { status: 409, message: "This refund already failed." },
+  REFUND_TERMS_MISSING: {
+    status: 500,
+    message: "This booking's cancellation policy has no refund terms configured.",
+  },
 };
 
 export function mapBookingError(rawMessage: string): { status: number; message: string } {
