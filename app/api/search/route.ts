@@ -45,7 +45,18 @@ export const GET = timeRoute("search", async (request: NextRequest): Promise<Res
       posts?: unknown[];
     };
 
-    let users = (payload.profiles ?? []).map((p) => ({ ...mapPublicUser(p), bio: p.bio ?? null }));
+    // kind/business ride along unmapped (already camelCase-compatible from
+    // the RPC's own jsonb_build_object keys apart from the nested niche
+    // object's snake_case, which AppUser/Niche.fromJson already fall back to
+    // reading on the Flutter side -- same as every other RPC response in
+    // this codebase, no new convention here) so a search result can show a
+    // business marker without a second round trip.
+    let users = (payload.profiles ?? []).map((p) => ({
+      ...mapPublicUser(p),
+      bio: p.bio ?? null,
+      kind: p.kind ?? "EXPLORER",
+      business: p.business ?? null,
+    }));
 
     // Drop accounts in a block relationship with the searcher.
     if (viewer) {
