@@ -8,9 +8,9 @@ const TYPES = new Set(["TOUR", "STAY", "EVENT", "CLASS", "RENTAL", "GUIDE", "TRA
 const VERIFICATION_TIERS = new Set(["UNVERIFIED", "CLAIMED", "ID_VERIFIED", "LICENCE_VERIFIED"]);
 const MAX_CELLS = 512;
 
-// GET /api/offerings/search?q=&nicheId=&type=&cells=a,b,c&limit=&minVerification=
+// GET /api/offerings/search?q=&nicheId=&type=&cells=a,b,c&limit=&minVerification=&minRating=
 // Business Mode Phase 4.1 (facet search) + 4.2 (location filtering) + 5.1
-// (verification facet), via search_offerings(). Public (no auth required,
+// (verification facet) + F.7 (rating facet), via search_offerings(). Public (no auth required,
 // matching search_all's own anon-allowed contract) -- offerings discovery is
 // meant to be found by anyone, same as radar_nearby. `cells` is a
 // client-computed h3 k-ring (device "near me" or a chosen place's ring);
@@ -28,6 +28,14 @@ export async function GET(request: NextRequest): Promise<Response> {
     const minVerificationRaw = request.nextUrl.searchParams.get("minVerification");
     const minVerification =
       minVerificationRaw && VERIFICATION_TIERS.has(minVerificationRaw) ? minVerificationRaw : null;
+
+    // F.7. Ratings are 1-5, so anything outside that is a malformed filter, not
+    // a stricter one -- dropped to null (no filter) rather than passed through,
+    // matching how every other facet here treats an unrecognised value. The DB
+    // function is what applies D9's >=3-review floor to it; this is a passthrough.
+    const minRatingRaw = Number(request.nextUrl.searchParams.get("minRating"));
+    const minRating =
+      Number.isFinite(minRatingRaw) && minRatingRaw >= 1 && minRatingRaw <= 5 ? minRatingRaw : null;
 
     const cellsRaw = request.nextUrl.searchParams.get("cells");
     const cells = cellsRaw
@@ -52,6 +60,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       p_cells: cells && cells.length > 0 ? cells : null,
       p_limit: limit,
       p_min_verification: minVerification,
+      p_min_rating: minRating,
     });
     if (error) return fail(error.message, 500);
 
