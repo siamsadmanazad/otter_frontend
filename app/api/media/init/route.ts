@@ -1,11 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
+import { activeProvider, activeProviderId } from "@/lib/storage";
 import { enforceRateLimit } from "@/lib/ratelimit";
 import { timeRoute } from "@/lib/observability";
 
 const BUCKET = "posts";
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg", "image/gif", "image/heic"];
+// MEDIA.md §7: the composer's video path. Narrower than POST /api/media's
+// allowlist on purpose -- the client is required to hand us a compressed,
+// faststart H.264/AAC MP4 (§7.2), so there is no reason to admit avi/ogg/webm
+// here and then discover we cannot read their duration.
+const VIDEO_TYPES = ["video/mp4", "video/quicktime"];
+// Requested TTL for the presigned upload. Supabase ignores it (fixed 60s
+// platform limit); R2 honours it, which is what makes a 25MB video upload on a
+// slow connection survivable -- see MEDIA.md §3 G14.
+const UPLOAD_TTL_SECONDS = 60 * 60;
 
 // POST /api/media/init  body { mimeType } -> { path, signedUrl, token }
 //
@@ -43,26 +52,51 @@ export const POST = timeRoute("media.init", async (request: NextRequest) => {
 
   const body = await request.json().catch(() => ({}));
   const mimeType = typeof body.mimeType === "string" ? body.mimeType : "";
-  if (!IMAGE_TYPES.includes(mimeType)) {
+  const isImage = IMAGE_TYPES.includes(mimeType);
+  const isVideo = VIDEO_TYPES.includes(mimeType);
+  if (!isImage && !isVideo) {
+    return NextResponse.json({ error: "Unsupported media type." }, { status: 400 });
+  }
+
+  // Video is admitted here ONLY on R2. This is not a policy choice, it is the
+  // 60-second Supabase ceiling: a 25MB upload that runs past it does not fail
+  // loudly, it fails MID-TRANSFER after the user has waited -- strictly worse
+  // than being slow. On Supabase, video keeps using the synchronous multipart
+  // route it uses today. MEDIA.md §3 G14.
+  if (isVideo && activeProviderId() !== "r2") {
     return NextResponse.json(
-      { error: "Only image uploads use this endpoint; upload video via POST /api/media." },
+      { error: "Video uploads use POST /api/media on this deployment." },
       { status: 400 }
     );
   }
 
-  const ext = mimeType.split("/")[1] || "bin";
+  const ext = (mimeType.split("/")[1] || "bin").replace("quicktime", "mov");
   const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
 
-  const db = createAdminClient();
-  const { data, error } = await db.storage.from(BUCKET).createSignedUploadUrl(path);
-  if (error || !data) {
-    return NextResponse.json({ error: error?.message || "Could not create upload URL" }, { status: 500 });
+  let ticket;
+  try {
+    ticket = await activeProvider().createUploadUrl(BUCKET, path, mimeType, UPLOAD_TTL_SECONDS);
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Could not create upload URL" },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({
     message: "Upload URL created",
-    path: data.path,
-    signedUrl: data.signedUrl,
-    token: data.token,
+    // `provider`/`uploadUrl`/`method`/`headers` are the new, provider-agnostic
+    // shape. `signedUrl` and `token` are kept as aliases so ALREADY-INSTALLED
+    // builds -- which only know the Supabase handshake -- keep working after a
+    // cutover; on R2 `token` is simply absent and those old clients still hit
+    // the Supabase branch of the flag until they update (MEDIA.md §6.3).
+    provider: ticket.provider,
+    path: ticket.path,
+    uploadUrl: ticket.uploadUrl,
+    method: ticket.method,
+    headers: ticket.headers,
+    ttlSeconds: ticket.ttlSeconds,
+    signedUrl: ticket.uploadUrl,
+    token: ticket.token,
   });
 });

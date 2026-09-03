@@ -3,6 +3,7 @@ import { Buffer } from "buffer";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
+import { activeProvider, activeProviderId, providerFor } from "@/lib/storage";
 import { isAllowed, limitKey } from "@/lib/ratelimit";
 import { moderateImage } from "@/lib/moderation";
 import { captureRouteError, timeRoute } from "@/lib/observability";
@@ -95,21 +96,22 @@ export const POST = timeRoute("media", async (request: NextRequest) => {
     }
 
     const db = createAdminClient();
+    const store = activeProvider();
     const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
-    const { error: upErr } = await db.storage.from(BUCKET).upload(path, buffer, {
-      contentType,
-      upsert: false,
-      // PERFORMANCE.md P1-3: was the SDK default (max-age=3600, 1 hour) even
-      // though every path is an immutable, randomly-generated UUID that's
-      // never overwritten (upsert: false) -- a pure CDN/browser cache-hit-rate
-      // loss with no upside. supabase-js builds the header as
-      // `max-age=${cacheControl}`, so this string produces exactly
-      // `Cache-Control: max-age=31536000, immutable`.
-      cacheControl: "31536000, immutable",
-    });
-    if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
+    try {
+      // PERFORMANCE.md P1-3: every path is an immutable, randomly-generated
+      // UUID that is never overwritten, so it gets a year-long immutable
+      // cache header. That is also what keeps the CDN hit ratio (and
+      // therefore R2's Class B op count) where MEDIA.md §1.1 assumes.
+      await store.put(BUCKET, path, buffer, contentType, "31536000, immutable");
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Upload failed" },
+        { status: 500 }
+      );
+    }
 
-    const url = db.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+    const url = store.publicUrl(BUCKET, path);
     const { data: media, error: insErr } = await db
       .from("media")
       .insert({
@@ -117,6 +119,7 @@ export const POST = timeRoute("media", async (request: NextRequest) => {
         media_type: isVideo ? "VIDEO" : "IMAGE",
         bucket: BUCKET,
         path,
+        provider: activeProviderId(),
         url,
       })
       .select("id")
@@ -146,13 +149,15 @@ export async function DELETE(request: NextRequest) {
   const db = createAdminClient();
   const { data: media } = await db
     .from("media")
-    .select("id, bucket, path, owner_id")
+    .select("id, bucket, path, owner_id, provider")
     .eq("id", id)
     .maybeSingle();
   if (!media || media.owner_id !== user.profileId) {
     return NextResponse.json({ error: "Media not found" }, { status: 404 });
   }
-  await db.storage.from(media.bucket).remove([media.path]);
+  // Deletes follow the ROW's provider, never the current flag -- objects
+  // written before a cutover still live on Supabase (MEDIA.md §6.2).
+  await providerFor(media.provider).remove(media.bucket, [media.path]);
   await db.from("media").delete().eq("id", id);
   return NextResponse.json({ message: "Media deleted", id });
 }

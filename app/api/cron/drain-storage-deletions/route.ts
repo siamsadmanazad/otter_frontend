@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { captureRouteError, timeRoute } from "@/lib/observability";
+import { providerFor } from "@/lib/storage";
 
 // GET /api/cron/drain-storage-deletions — Vercel Cron only (see vercel.json).
 //
@@ -32,7 +33,7 @@ export const GET = timeRoute("cron.drainStorageDeletions", async (request: NextR
 
   const { data: batch, error: fetchErr } = await db
     .from("pending_storage_deletions")
-    .select("id, bucket, path")
+    .select("id, bucket, path, provider")
     .order("created_at", { ascending: true })
     .limit(BATCH_SIZE);
   if (fetchErr) {
@@ -43,27 +44,42 @@ export const GET = timeRoute("cron.drainStorageDeletions", async (request: NextR
     return NextResponse.json({ drained: 0 });
   }
 
-  const byBucket = new Map<string, { ids: number[]; paths: string[] }>();
-  for (const row of batch) {
-    const bucket = byBucket.get(row.bucket) ?? { ids: [], paths: [] };
-    bucket.ids.push(row.id);
-    bucket.paths.push(row.path);
-    byBucket.set(row.bucket, bucket);
+  // Grouped by (provider, bucket): a queued object must be deleted from the
+  // store it actually lives on, which after the R2 cutover is not necessarily
+  // the store new uploads go to. Getting this wrong leaks bytes silently --
+  // MEDIA.md §8 flags it as the fastest path to a surprise bill.
+  const byBucket = new Map<string, { provider: string; bucket: string; ids: number[]; paths: string[] }>();
+  // Cast: `provider` is new in 20260903220000_media_provider.sql and the
+  // checked-in generated types predate it.
+  const rows = batch as unknown as Array<{
+    id: number;
+    bucket: string;
+    path: string;
+    provider: string | null;
+  }>;
+  for (const row of rows) {
+    const provider = row.provider ?? "supabase";
+    const key = `${provider}:${row.bucket}`;
+    const group = byBucket.get(key) ?? { provider, bucket: row.bucket, ids: [], paths: [] };
+    group.ids.push(row.id);
+    group.paths.push(row.path);
+    byBucket.set(key, group);
   }
 
   let drained = 0;
   const failures: string[] = [];
-  for (const [bucket, { ids, paths }] of byBucket) {
-    // Best-effort per bucket: a failure removing one bucket's batch (e.g. an
+  for (const [key, { provider, bucket, ids, paths }] of byBucket) {
+    // Best-effort per group: a failure removing one group's batch (e.g. an
     // already-gone object) shouldn't block the others' rows from draining.
-    const { error: rmErr } = await db.storage.from(bucket).remove(paths);
-    if (rmErr) {
-      failures.push(`${bucket}: ${rmErr.message}`);
+    try {
+      await providerFor(provider).remove(bucket, paths);
+    } catch (e) {
+      failures.push(`${key}: ${e instanceof Error ? e.message : String(e)}`);
       continue;
     }
     const { error: delErr } = await db.from("pending_storage_deletions").delete().in("id", ids);
     if (delErr) {
-      failures.push(`${bucket} (queue row delete): ${delErr.message}`);
+      failures.push(`${key} (queue row delete): ${delErr.message}`);
       continue;
     }
     drained += ids.length;
