@@ -29,7 +29,7 @@ export async function GET(request: NextRequest): Promise<Response> {
         // profile shelf of twenty services should not carry twenty itineraries.
         // `itinerary` and `house_rules` are deliberately absent here and read
         // on the detail screen instead.
-        "id, type, status, title, description, images, niche_id, price_mode, price_cents, currency, booking_mode, external_url, always_available, starts_at, ends_at, capacity, place_id, lat, lng, created_at, service_form, amenities, inclusions, exclusions, languages, cancellation_policy, min_party, max_party, check_in_time, check_out_time, min_nights, max_nights, bedrooms, beds, bathrooms, duration_minutes, meeting_point, instant_book"
+        "id, type, status, title, description, images, niche_id, price_mode, price_cents, currency, booking_mode, external_url, always_available, starts_at, ends_at, capacity, place_id, lat, lng, created_at, service_form, amenities, inclusions, exclusions, languages, cancellation_policy, min_party, max_party, check_in_time, check_out_time, min_nights, max_nights, bedrooms, beds, bathrooms, duration_minutes, meeting_point, instant_book, save_count"
       )
       .eq("owner_profile_id", ownerId)
       .order("created_at", { ascending: false });
@@ -93,6 +93,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       meetingPoint: o.meeting_point,
       instantBook: o.instant_book,
       isSaved: savedIds.has(o.id),
+      saveCount: o.save_count,
     }));
 
     return ok(mapped, "Services retrieved");

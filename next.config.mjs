@@ -54,6 +54,28 @@ const nextConfig = {
       { protocol: "https", hostname: "loremflickr.com" },
     ],
   },
+  // Domain move: tripotter.net now points at THIS project (the app), not at
+  // otter_landing. Two things have to keep resolving after the swap:
+  //   1. The "Missing Otti" campaign, whose QR codes and /r/<code> referral
+  //      links are already printed and shared -- forwarded to the subdomain
+  //      the landing project now serves.
+  //   2. The legal pages, which were at /privacy and /terms on the landing
+  //      site and may already be filed in the Play Console listing.
+  // Both are 307/308-safe: nothing here is a permanent redirect except the
+  // legal pages, whose new home is settled.
+  async redirects() {
+    const campaign = "https://findotti.tripotter.net";
+    return [
+      { source: "/findotti", destination: `${campaign}/findotti`, permanent: false },
+      { source: "/findotti/:path*", destination: `${campaign}/findotti/:path*`, permanent: false },
+      { source: "/founders", destination: `${campaign}/founders`, permanent: false },
+      { source: "/leaderboard", destination: `${campaign}/leaderboard`, permanent: false },
+      { source: "/welcome", destination: `${campaign}/welcome`, permanent: false },
+      { source: "/r/:code", destination: `${campaign}/r/:code`, permanent: false },
+      { source: "/privacy", destination: "/misc/privacy-policy", permanent: true },
+      { source: "/terms", destination: "/misc/terms-and-condition", permanent: true },
+    ];
+  },
   async headers() {
     return [
       {

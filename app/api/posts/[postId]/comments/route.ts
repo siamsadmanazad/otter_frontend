@@ -14,9 +14,12 @@ import { timeRoute } from "@/lib/observability";
 // parent's replies, oldest first always (a conversation, not a feed —
 // `sort` doesn't apply to replies, feed_detail_split.md F6).
 //
-// Comments are public read (RLS: comments_select_all), so this never gates
-// on login — an anonymous caller gets the same list with iLiked always
-// false (p_viewer null). feed_detail_split.md A4/F6.
+// Comments are public read by default, so this never gates on login — an
+// anonymous caller gets the same list with iLiked always false (p_viewer
+// null). feed_detail_split.md A4/F6. get_post_comments/get_comment_replies
+// (both SECURITY DEFINER) now also exclude a HIDDEN/REMOVED comment unless
+// p_viewer is its own owner, and either side of a blocks relationship with
+// p_viewer — comment moderation, added after this route was first written.
 export const GET = timeRoute("posts.comments", async (
   request: NextRequest,
   { params }: { params: Promise<{ postId: string }> }

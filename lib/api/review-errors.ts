@@ -64,6 +64,20 @@ const REVIEW_ERRORS: Record<string, { status: number; message: string }> = {
     message: "Only the host of this service can reply to a review.",
   },
 
+  // ── toggle_review_helpful() (Phase G.4, 20260903190000) ──────────────────
+  REVIEW_NOT_FOUND: {
+    status: 404,
+    message: "Review not found.",
+  },
+  REVIEW_NOT_HELPFUL_ELIGIBLE: {
+    status: 409,
+    message: "This review isn't available to vote on.",
+  },
+  REVIEW_SELF_HELPFUL_NOT_ALLOWED: {
+    status: 403,
+    message: "You can't mark your own review as helpful.",
+  },
+
   // ── Postgres constraint fallbacks a caller could realistically hit ────────
   // The one-review-per-booking rule (G3) is a `unique` constraint, not a
   // named RAISE -- PostgREST surfaces it as code 23505 with the constraint

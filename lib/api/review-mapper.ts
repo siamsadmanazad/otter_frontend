@@ -28,5 +28,10 @@ export function mapReview(r: Record<string, unknown>) {
     editedUntil: r.edited_until,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    // Phase G.4 -- the raw denorm (offering_reviews.helpful_count), same
+    // status as bookingProof above. Absent on a row that predates the
+    // column's default (there are none -- every existing row backfilled to
+    // 0) is impossible here, so this is never optional the way isHelpful is.
+    helpfulCount: r.helpful_count ?? 0,
   };
 }
