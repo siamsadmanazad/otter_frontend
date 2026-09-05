@@ -175,6 +175,123 @@ async function validatePlaceAndAltTexts(
   return { placeTrail: placeTrailRaw, topicNicheId };
 }
 
+
+// ── MEDIA.md P5.1 · the post's media list ────────────────────────────────────
+//
+// A post's media arrives as a list of **media ids**, never as objects. By the
+// time a composer publishes it already knows each item's url, dimensions and
+// duration -- and every one of those is attacker-controlled if we write what
+// the client sends. `/api/media/complete` already measured the truth (duration
+// out of the file's own mvhd box, never believed from the client) and stored it
+// on the row; this reads it back out rather than re-accepting it over the wire.
+//
+// A post may carry AT MOST ONE VIDEO. Not a schema limit -- `posts.media` is an
+// array and would hold ten -- but a playback one: §7.4 allows exactly one
+// active video controller app-wide, so a second video in the same card could
+// never play without stopping the first. One video, any number of photos
+// beside it, is the shape the player can actually honour.
+const MAX_POST_VIDEOS = 1;
+
+type PostMediaEntry = {
+  type: "IMAGE" | "VIDEO";
+  url: string;
+  posterUrl: string | null;
+  width: number | null;
+  height: number | null;
+  durationMs: number | null;
+  provider: string;
+  mediaId: string;
+};
+
+/**
+ * Resolves `body.media` (media ids) into the `posts.media` jsonb, and returns
+ * the poster urls that must be appended to `posts.images`.
+ *
+ * THE DO-NO-HARM RULE (MEDIA.md §7.1) is implemented here and nowhere else: a
+ * video's POSTER url goes into `images`, so a build that predates the `media`
+ * column renders a still frame instead of an empty card. The video url itself
+ * is deliberately never written there -- an old client would try to render it
+ * as an <img>.
+ */
+async function resolvePostMedia(
+  db: ReturnType<typeof createAdminClient>,
+  body: Record<string, unknown>,
+  profileId: string,
+  maxItems: number
+): Promise<{ error: string } | { media: PostMediaEntry[]; posterUrls: string[] }> {
+  const raw = body.media;
+  if (raw === undefined || raw === null) return { media: [], posterUrls: [] };
+  if (!Array.isArray(raw)) return { error: "media must be a list of media ids" };
+  if (raw.length === 0) return { media: [], posterUrls: [] };
+
+  const ids = raw.filter((v): v is string => typeof v === "string" && UUID_RE.test(v));
+  if (ids.length !== raw.length) return { error: "media must be a list of media ids" };
+  if (new Set(ids).size !== ids.length) return { error: "That media is attached twice" };
+  if (ids.length > maxItems) {
+    return { error: `This post can carry at most ${maxItems} items` };
+  }
+
+  const { data: rows, error } = await db
+    .from("media")
+    .select("id, owner_id, media_type, url, provider, width, height, duration_ms, poster_media_id")
+    .in("id", ids);
+  if (error) return { error: error.message };
+
+  const byId = new Map((rows ?? []).map((r) => [r.id as string, r]));
+  // Posters are fetched in one extra round trip rather than through a join, so
+  // a poster row that has since been deleted degrades to "no poster" instead of
+  // dropping the whole video.
+  const posterIds = (rows ?? [])
+    .map((r) => r.poster_media_id as string | null)
+    .filter((v): v is string => typeof v === "string");
+  const posterById = new Map<string, { url: string }>();
+  if (posterIds.length > 0) {
+    const { data: posters } = await db.from("media").select("id, url").in("id", posterIds);
+    for (const p of posters ?? []) posterById.set(p.id as string, { url: p.url as string });
+  }
+
+  const media: PostMediaEntry[] = [];
+  const posterUrls: string[] = [];
+  let videos = 0;
+
+  // Iterated in the order the CLIENT sent, not the order Postgres returned --
+  // media order is the author's composition and `.in()` makes no promise.
+  for (const id of ids) {
+    const row = byId.get(id);
+    // Ownership is the whole authorisation check: without it a post could
+    // mount someone else's moderated media by id alone.
+    if (!row || row.owner_id !== profileId) return { error: "That media is no longer available" };
+
+    const isVideo = row.media_type === "VIDEO";
+    if (isVideo && ++videos > MAX_POST_VIDEOS) {
+      return { error: "A post can carry one video" };
+    }
+
+    const posterUrl = isVideo
+      ? posterById.get((row.poster_media_id as string) ?? "")?.url ?? null
+      : null;
+    // A video with no readable poster is refused rather than published: the
+    // feed cannot draw a video tile without one (§3 G9), and `images` would
+    // get nothing, which is exactly the empty card the do-no-harm rule exists
+    // to prevent.
+    if (isVideo && !posterUrl) return { error: "That video has no cover frame" };
+    if (posterUrl) posterUrls.push(posterUrl);
+
+    media.push({
+      type: isVideo ? "VIDEO" : "IMAGE",
+      url: row.url as string,
+      posterUrl,
+      width: (row.width as number | null) ?? null,
+      height: (row.height as number | null) ?? null,
+      durationMs: (row.duration_ms as number | null) ?? null,
+      provider: (row.provider as string | null) ?? "supabase",
+      mediaId: row.id as string,
+    });
+  }
+
+  return { media, posterUrls };
+}
+
 // POST /api/posts -> create post (owner = authenticated user)
 export async function POST(request: NextRequest): Promise<Response> {
   try {
@@ -194,7 +311,32 @@ export async function POST(request: NextRequest): Promise<Response> {
     const tribeId: string | null = body.fromGroup ?? body.tribeId ?? null;
     const db = createAdminClient();
 
-    const placeValidation = await validatePlaceAndAltTexts(db, body, images, genre);
+    // MEDIA.md P5.1. The per-genre cap is the genre's own photo cap, because
+    // the two lists describe the same tray: `posts_post_images_cap_chk` counts
+    // `images`, and a video's poster lands there, so a POST carrying a video
+    // plus four photos would violate it. Capping `media` at the same number
+    // keeps the two in step and produces a specific error instead of a raw
+    // constraint violation.
+    const mediaCap = genre === "POST" ? 4 : 10;
+    const mediaResolution = await resolvePostMedia(db, body, user.profileId, mediaCap);
+    if ("error" in mediaResolution) return fail(mediaResolution.error, 400);
+    const { media: postMedia, posterUrls } = mediaResolution;
+    // The do-no-harm append (§7.1). Poster urls join `images` so that an
+    // installed build with no knowledge of `media` still renders a still frame.
+    // A poster already present -- a composer that uploaded it as a photo too --
+    // is not added twice.
+    const imagesWithPosters = [...images, ...posterUrls.filter((u) => !images.includes(u))];
+
+    // Alt text is validated against the FINAL images array, posters included,
+    // not against the photos alone: `posts_alt_texts_len_chk` requires
+    // cardinality(alt_texts) to be 0 or exactly cardinality(images), so a
+    // composer that describes its photos but not its video's cover frame would
+    // hit a raw constraint violation. Appending a blank filler here instead
+    // would satisfy the constraint by shipping an undescribed tile, which is
+    // the a11y bug the constraint exists to prevent -- so the composer is
+    // required to describe the cover frame, and the poster is appended LAST so
+    // its alt text is simply the last element.
+    const placeValidation = await validatePlaceAndAltTexts(db, body, imagesWithPosters, genre);
     if ("error" in placeValidation) return fail(placeValidation.error, 400);
     const { placeTrail, topicNicheId } = placeValidation;
 
@@ -270,12 +412,12 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     if (genre === "POST") {
-      if ((!caption || !caption.trim()) && images.length === 0) {
+      if ((!caption || !caption.trim()) && imagesWithPosters.length === 0) {
         return fail("Add a body, or at least a title, to your Post", 400);
       }
       // Enrichment cap (D21) -- checked here too so the error is specific;
       // posts_post_images_cap_chk is the DB-level backstop.
-      if (images.length > 4) {
+      if (imagesWithPosters.length > 4) {
         return fail("A Post can carry at most 4 photos", 400);
       }
       // Posts are always public content -- never inside a private tribe
@@ -293,7 +435,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           return fail("Posts can't be created inside a private tribe", 403);
         }
       }
-    } else if (!caption?.trim() && images.length === 0 && !resolvedTitle) {
+    } else if (!caption?.trim() && imagesWithPosters.length === 0 && !resolvedTitle) {
       return fail("At least one of caption or image is required", 400);
     }
 
@@ -301,7 +443,8 @@ export async function POST(request: NextRequest): Promise<Response> {
       .from("posts")
       .insert({
         owner_id: user.profileId,
-        images,
+        images: imagesWithPosters,
+        media: postMedia,
         alt_texts: Array.isArray(body.altTexts) ? body.altTexts : [],
         caption: caption ?? null,
         title: resolvedTitle,
