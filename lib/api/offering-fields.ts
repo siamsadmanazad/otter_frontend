@@ -75,6 +75,56 @@ const CANCELLATION_POLICIES = new Set([
   "FLEXIBLE", "MODERATE", "STRICT", "NON_REFUNDABLE",
 ]);
 
+// business_post_polish.md §6.1 — what price_cents is PER, scoped per type
+// exactly like every other field in this file (D3: one law, three places —
+// this is the API's copy; the DB's is offerings_price_unit_chk, the
+// composer's is service_field_spec.dart's PRICE_UNITS). A forged unit for
+// the wrong type is rejected here with a sentence, then again by the DB
+// constraint if this layer is ever bypassed.
+export const PRICE_UNITS_BY_TYPE: Record<OfferingType, readonly string[]> = {
+  STAY: ["NIGHT", "GROUP"],
+  TOUR: ["PERSON", "GROUP"],
+  EVENT: ["PERSON", "GROUP"],
+  CLASS: ["PERSON", "SESSION"],
+  GUIDE: ["HOUR", "DAY", "GROUP"],
+  TRANSPORT: ["TRIP", "DAY", "KM"],
+  RENTAL: ["HOUR", "DAY", "WEEK"],
+  TABLE: ["PERSON", "GROUP"],
+};
+
+export const DEFAULT_PRICE_UNIT_BY_TYPE: Record<OfferingType, string> = {
+  STAY: "NIGHT",
+  TOUR: "PERSON",
+  EVENT: "PERSON",
+  CLASS: "PERSON",
+  GUIDE: "DAY",
+  TRANSPORT: "TRIP",
+  RENTAL: "DAY",
+  TABLE: "PERSON",
+};
+
+/**
+ * Validates `priceUnit` against §6.1's per-type set. Only called when
+ * `priceMode` is FIXED/FROM (route.ts) — a FREE or absent price has no unit
+ * to validate. `unit` defaults to the type's own §6.1 default rather than
+ * failing when omitted, matching offerings_price_chk's own "price_unit is
+ * not null" requirement without forcing every existing composer/client call
+ * site to learn a new required field the same day this ships.
+ */
+export function validatePriceUnit(
+  unit: unknown,
+  type: OfferingType
+): { error: string } | { value: string } {
+  const allowed = PRICE_UNITS_BY_TYPE[type];
+  if (unit === undefined || unit === null || unit === "") {
+    return { value: DEFAULT_PRICE_UNIT_BY_TYPE[type] };
+  }
+  if (typeof unit !== "string" || !allowed.includes(unit)) {
+    return { error: `priceUnit must be one of: ${allowed.join(", ")}` };
+  }
+  return { value: unit };
+}
+
 function strArray(v: unknown, max: number, maxLen: number): string[] | { error: string } {
   if (!Array.isArray(v)) return { error: "must be a list" };
   const out = v.filter((x): x is string => typeof x === "string").map((x) => x.trim()).filter(Boolean);
@@ -269,3 +319,4 @@ export async function validateServiceForm(
   if (!data) return { error: "That kind doesn't belong to this type of service" };
   return { value: form };
 }
+

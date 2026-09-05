@@ -2,11 +2,20 @@ import { NextRequest } from "next/server";
 import { createActorClient } from "@/lib/supabase/server";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
-import { validateTypeFields, validateServiceForm, type OfferingType } from "@/lib/api/offering-fields";
+import {
+  validateTypeFields,
+  validateServiceForm,
+  validatePriceUnit,
+  type OfferingType,
+} from "@/lib/api/offering-fields";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TYPES = new Set(["TOUR", "STAY", "EVENT", "CLASS", "RENTAL", "GUIDE", "TRANSPORT", "TABLE"]);
-const PRICE_MODES = new Set(["FREE", "FIXED", "FROM", "ENQUIRE"]);
+// business_post_polish.md D12/G13 — OStad, live: "the price must be given,
+// we are encouraging consumers to purchase through our platform." ENQUIRE
+// dropped from what a listing's PRICE can say; booking_mode's own ENQUIRE
+// ("message the host to book") is a separate set, untouched below.
+const PRICE_MODES = new Set(["FREE", "FIXED", "FROM"]);
 const BOOKING_MODES = new Set(["ENQUIRE", "RESERVE", "EXTERNAL_LINK"]);
 
 // GET /api/offerings?ownerId=<uuid> — a business's offerings (business_mode.md
@@ -29,7 +38,7 @@ export async function GET(request: NextRequest): Promise<Response> {
         // profile shelf of twenty services should not carry twenty itineraries.
         // `itinerary` and `house_rules` are deliberately absent here and read
         // on the detail screen instead.
-        "id, type, status, title, description, images, niche_id, price_mode, price_cents, currency, booking_mode, external_url, always_available, starts_at, ends_at, capacity, place_id, lat, lng, created_at, service_form, amenities, inclusions, exclusions, languages, cancellation_policy, min_party, max_party, check_in_time, check_out_time, min_nights, max_nights, bedrooms, beds, bathrooms, duration_minutes, meeting_point, instant_book, save_count"
+        "id, type, status, title, description, images, niche_id, price_mode, price_cents, price_unit, currency, booking_mode, external_url, always_available, starts_at, ends_at, capacity, place_id, lat, lng, created_at, service_form, amenities, inclusions, exclusions, languages, cancellation_policy, min_party, max_party, check_in_time, check_out_time, min_nights, max_nights, bedrooms, beds, bathrooms, duration_minutes, meeting_point, instant_book, save_count"
       )
       .eq("owner_profile_id", ownerId)
       .order("created_at", { ascending: false });
@@ -63,6 +72,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       nicheId: o.niche_id,
       priceMode: o.price_mode,
       priceCents: o.price_cents,
+      priceUnit: o.price_unit,
       currency: o.currency,
       bookingMode: o.booking_mode,
       externalUrl: o.external_url,
@@ -157,17 +167,24 @@ export async function POST(request: NextRequest): Promise<Response> {
       return fail("capacity must be 1-500", 400);
     }
 
-    const priceMode = typeof body.priceMode === "string" ? body.priceMode : "ENQUIRE";
+    // No default fallback here on purpose (was "ENQUIRE") — a missing
+    // priceMode now fails validation instead of silently becoming the mode
+    // this migration just retired. D12: a host states a real price, always.
+    const priceMode = typeof body.priceMode === "string" ? body.priceMode : "";
     if (!PRICE_MODES.has(priceMode)) return fail("Invalid priceMode", 400);
     let priceCents: number | null = null;
     let currency: string | null = null;
+    let priceUnit: string | null = null;
     if (priceMode === "FIXED" || priceMode === "FROM") {
       const cents = Number(body.priceCents);
       const cur: string = typeof body.currency === "string" ? body.currency.toUpperCase() : "";
       if (!Number.isInteger(cents) || cents < 0) return fail("priceCents must be >= 0", 400);
       if (cur.length !== 3) return fail("currency must be a 3-letter code", 400);
+      const unit = validatePriceUnit(body.priceUnit, type as OfferingType);
+      if ("error" in unit) return fail(unit.error, 400);
       priceCents = cents;
       currency = cur;
+      priceUnit = unit.value;
     }
 
     const bookingMode = typeof body.bookingMode === "string" ? body.bookingMode : "ENQUIRE";
@@ -215,6 +232,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         capacity,
         price_mode: priceMode,
         price_cents: priceCents,
+        price_unit: priceUnit,
         currency,
         booking_mode: bookingMode,
         external_url: externalUrl,

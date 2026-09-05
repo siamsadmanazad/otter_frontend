@@ -16,6 +16,10 @@ export function mapBooking(b: Record<string, unknown>) {
     buyerProfileId: b.buyer_profile_id,
     businessId: b.business_id,
     partySize: b.party_size,
+    // business_post_polish.md Phase 3 (§9 Q2, re-answered 2026-09-05): the
+    // guest pays the FULL booking value on the platform, so this is the
+    // whole amount and there is no balance owed anywhere else. Commission is
+    // charged on this number.
     amountMinor: b.amount_minor,
     currency: b.currency,
     status: b.status,
