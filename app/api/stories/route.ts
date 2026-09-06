@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { createActorClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
 import { enforceRateLimit } from "@/lib/ratelimit";
@@ -24,6 +25,87 @@ const STORAGE_PATH_RE = /\/storage\/v1\/object\/public\/[^/]+\/(.+)$/;
 function derivePathFromUrl(url: string): string | null {
   const m = url.match(STORAGE_PATH_RE);
   return m ? decodeURIComponent(m[1]) : null;
+}
+
+// ── MEDIA.md P7 · a story from a media ROW, not a url ───────────────────────
+//
+// The url-shaped body above is the ORIGINAL contract and stays supported for
+// every already-installed build. It has two limits this one does not:
+//
+//  1. It cannot express video at all — media_kind, the poster pair and the
+//     measured duration have nowhere to come from.
+//  2. `derivePathFromUrl` only understands a SUPABASE public url. Once
+//     MEDIA_PROVIDER flips to r2 the upload returns a media.tripotter.net url
+//     that matches nothing, and an old client's story publish fails with
+//     "Could not resolve that photo" — so this path is also what keeps
+//     stories working across the cutover.
+//
+// Resolving a media id server-side is the same rule /api/posts already
+// follows: url, path, kind, poster and duration are read off the row the
+// server itself wrote in /api/media/complete, never accepted over the wire.
+type ResolvedStoryMedia = {
+  media_url: string;
+  media_path: string;
+  media_kind: "IMAGE" | "VIDEO";
+  poster_url: string | null;
+  poster_path: string | null;
+  duration_ms: number | null;
+};
+
+async function resolveStoryMedia(
+  mediaId: string,
+  profileId: string
+): Promise<{ error: string } | { media: ResolvedStoryMedia }> {
+  const db = createAdminClient();
+  const { data: row, error } = await db
+    .from("media")
+    .select("id, owner_id, media_type, url, path, duration_ms, poster_media_id")
+    .eq("id", mediaId)
+    .maybeSingle();
+  if (error) return { error: error.message };
+  // Ownership IS the authorisation check: without it a story could mount
+  // someone else's (possibly moderated-away) media by id alone.
+  if (!row || row.owner_id !== profileId) {
+    return { error: "That upload is no longer available" };
+  }
+
+  const isVideo = row.media_type === "VIDEO";
+  if (!isVideo) {
+    return {
+      media: {
+        media_url: row.url as string,
+        media_path: row.path as string,
+        media_kind: "IMAGE",
+        poster_url: null,
+        poster_path: null,
+        duration_ms: null,
+      },
+    };
+  }
+
+  const posterId = row.poster_media_id as string | null;
+  if (!posterId) return { error: "That video has no cover frame" };
+  const { data: poster } = await db
+    .from("media")
+    .select("id, owner_id, url, path")
+    .eq("id", posterId)
+    .maybeSingle();
+  // stories_video_needs_poster_chk would reject this insert anyway; refusing
+  // here turns a raw constraint string into copy the composer can show.
+  if (!poster || poster.owner_id !== profileId) {
+    return { error: "That video has no cover frame" };
+  }
+
+  return {
+    media: {
+      media_url: row.url as string,
+      media_path: row.path as string,
+      media_kind: "VIDEO",
+      poster_url: poster.url as string,
+      poster_path: poster.path as string,
+      duration_ms: (row.duration_ms as number | null) ?? null,
+    },
+  };
 }
 
 // GET /api/stories?tray=1[&limit=] -> story_tray()
@@ -72,10 +154,31 @@ export async function POST(request: NextRequest): Promise<Response> {
     if (limited) return limited;
 
     const body = await request.json();
-    const mediaUrl: string | undefined = body.mediaUrl;
-    if (!mediaUrl || !mediaUrl.trim()) return fail("A photo is required", 400);
-    const mediaPath: string | null = body.mediaPath || derivePathFromUrl(mediaUrl);
-    if (!mediaPath) return fail("Could not resolve that photo. Try uploading it again.", 400);
+
+    // Two accepted shapes, newest first: a media id the server resolves, or
+    // the original url+path pair. See resolveStoryMedia's own doc for why
+    // both exist and why the id one is the only path that can carry video.
+    let resolved: ResolvedStoryMedia;
+    const mediaId: string | undefined = body.mediaId;
+    if (typeof mediaId === "string" && mediaId.trim()) {
+      if (!UUID_RE.test(mediaId)) return fail("Invalid media ID", 400);
+      const outcome = await resolveStoryMedia(mediaId, user.profileId);
+      if ("error" in outcome) return fail(outcome.error, 400);
+      resolved = outcome.media;
+    } else {
+      const mediaUrl: string | undefined = body.mediaUrl;
+      if (!mediaUrl || !mediaUrl.trim()) return fail("A photo is required", 400);
+      const mediaPath: string | null = body.mediaPath || derivePathFromUrl(mediaUrl);
+      if (!mediaPath) return fail("Could not resolve that photo. Try uploading it again.", 400);
+      resolved = {
+        media_url: mediaUrl,
+        media_path: mediaPath,
+        media_kind: "IMAGE",
+        poster_url: null,
+        poster_path: null,
+        duration_ms: null,
+      };
+    }
 
     const placeId: string | null = body.placeId || null;
     if (placeId && !UUID_RE.test(placeId)) return fail("Invalid place ID", 400);
@@ -102,8 +205,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       .from("stories")
       .insert({
         author_profile_id: user.profileId,
-        media_url: mediaUrl,
-        media_path: mediaPath,
+        media_url: resolved.media_url,
+        media_path: resolved.media_path,
+        media_kind: resolved.media_kind,
+        poster_url: resolved.poster_url,
+        poster_path: resolved.poster_path,
+        duration_ms: resolved.duration_ms,
         alt_text: body.altText || null,
         place_id: placeId,
         h3_index: h3Index,

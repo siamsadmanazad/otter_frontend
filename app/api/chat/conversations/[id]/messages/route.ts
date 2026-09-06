@@ -485,7 +485,7 @@ export async function POST(
     const { data: story, error: storyErr } = await db
       .from("stories")
       .select(
-        `id, author_profile_id, media_url, alt_text, expires_at, highlighted_at, audience_mode, audience_snapshot, author:profiles!stories_author_profile_id_fkey(username, full_name, profile_image), place:radar_places!stories_place_id_fkey(title), tribe:tribes!stories_tribe_id_fkey(name)` as const
+        `id, author_profile_id, media_url, media_kind, poster_url, alt_text, expires_at, highlighted_at, audience_mode, audience_snapshot, author:profiles!stories_author_profile_id_fkey(username, full_name, profile_image), place:radar_places!stories_place_id_fkey(title), tribe:tribes!stories_tribe_id_fkey(name)` as const
       )
       .eq("id", storyId)
       .maybeSingle();
@@ -524,7 +524,11 @@ export async function POST(
     attachments[0] = {
       type: "story",
       storyId: story.id,
-      mediaUrl: story.media_url,
+      // MEDIA.md P7 — the quote card draws this as a 56pt <img>, so a VIDEO
+      // story sends its POSTER. Handing the card an .mp4 url would be a
+      // broken thumbnail in the thread forever: this snapshot is written
+      // once, at send time, and never re-resolved.
+      mediaUrl: story.media_kind === "VIDEO" ? story.poster_url : story.media_url,
       altText: story.alt_text ?? undefined,
       authorId: story.author_profile_id,
       authorName: author?.full_name || author?.username || undefined,
