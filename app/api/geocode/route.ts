@@ -25,9 +25,24 @@ export async function GET(request: NextRequest): Promise<Response> {
     if (limited) return limited;
 
     const apiKey = process.env.MAPTILER_API_KEY;
-    if (!apiKey) return fail("Location search is not configured", 503);
+    // Says what is actually wrong, because this is an OPERATIONAL fault (the
+    // key is missing from the deployment), not a user error — and the picker
+    // now shows this sentence verbatim. MAPTILER_API_KEY was absent from
+    // production until 2026-09-07, which made every location search in the
+    // service composer silently return nothing.
+    if (!apiKey) {
+      return fail("Location search isn't set up on this server yet.", 503);
+    }
 
-    const url = `https://api.maptiler.com/geocoding/${encodeURIComponent(q)}.json?key=${apiKey}&limit=6&language=en&country=bd`;
+    // `country=bd` used to be a HARD filter here, so a search for anywhere
+    // outside Bangladesh returned zero results with no explanation — on a
+    // TRAVEL app, whose whole premise is hosts and travellers who are not in
+    // one country. Replaced with a proximity bias: Bangladeshi places still
+    // rank first (which is what the restriction was really trying to buy),
+    // and Kathmandu, Bangkok and Cox's Bazar are all findable.
+    const url =
+      `https://api.maptiler.com/geocoding/${encodeURIComponent(q)}.json` +
+      `?key=${apiKey}&limit=6&language=en&proximity=90.4125,23.8103`;
     const res = await fetch(url);
     if (!res.ok) return fail("Geocoding lookup failed", 502);
 
