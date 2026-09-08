@@ -314,11 +314,14 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const db = createAdminClient();
 
-  const { data: target } = await db
-    .from("profiles")
-    .select("id, username, full_name, profile_image")
-    .eq("id", targetId)
-    .single();
+  // Independent of each other (different ids), fetched together rather than
+  // sequentially -- this route already makes several round trips and this is
+  // one more only when a NEW conversation might need it (see the business
+  // directionality gate below), not on every send within an existing thread.
+  const [{ data: target }, { data: meProfile }] = await Promise.all([
+    db.from("profiles").select("id, username, full_name, profile_image, kind").eq("id", targetId).single(),
+    db.from("profiles").select("id, kind").eq("id", me.profileId).single(),
+  ]);
   if (!target) return fail("User not found", 404);
 
   // Can't start a chat across a block (either direction).
@@ -375,6 +378,42 @@ export async function POST(request: NextRequest): Promise<Response> {
       .limit(1)
       .maybeSingle();
     if (existing) conversationId = existing.id;
+  }
+
+  // Business-directionality gate (harmony/blocking review, 2026-09-09):
+  // a BUSINESS profile may never open the FIRST message to an EXPLORER. This
+  // deliberately checks kind at the point of CREATING a new thread, not
+  // anywhere earlier -- an explorer who already messaged a business (or has
+  // one from before this gate shipped) keeps it working through the
+  // "existing conversation" branch above untouched; this only stops a cold
+  // open. Scoped to business -> explorer specifically: business -> business
+  // outreach (partnerships, networking) isn't the abuse case this closes and
+  // stays unrestricted.
+  //
+  // Why not cascade personal blocks onto a business instead: a business can
+  // have multiple staff (business_members: MEMBER/MODERATOR/ADMIN/FOUNDER),
+  // so "person X blocked someone" has no single answer for "should the
+  // business be restricted too" -- it would silently restrict staff who
+  // never blocked anyone. Directionality avoids that question entirely: the
+  // existing per-profile `blocks` table (unchanged, checked above) already
+  // covers "an explorer blocked this business specifically."
+  if (!conversationId && meProfile?.kind === "BUSINESS" && target.kind === "EXPLORER") {
+    const { data: qualifying } = await db
+      .from("bookings")
+      .select("id")
+      .eq("business_id", me.profileId)
+      .eq("buyer_profile_id", targetId)
+      .limit(1)
+      .maybeSingle();
+    // ANY booking qualifies regardless of status -- even a cancelled or
+    // expired one is a real prior interaction with THIS business, not a cold
+    // contact, and a business legitimately needs to follow up on those too.
+    if (!qualifying) {
+      return fail(
+        "Businesses can only message customers who've messaged first or have an active booking",
+        403
+      );
+    }
   }
 
   if (!conversationId) {
