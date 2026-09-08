@@ -85,6 +85,7 @@ export const POST = timeRoute("media", async (request: NextRequest) => {
     let variantWidth: number | null = null;
     let variantHeight: number | null = null;
     let thumbBuffer: Buffer | null = null;
+    let thumbSizeBytes: number | null = null;
     if (isImage && mimeType !== "image/gif" && mimeType !== "image/heic") {
       try {
         const variants = await encodeImageVariants(buffer);
@@ -92,6 +93,7 @@ export const POST = timeRoute("media", async (request: NextRequest) => {
         variantWidth = variants.feed.width;
         variantHeight = variants.feed.height;
         thumbBuffer = variants.thumb.buffer;
+        thumbSizeBytes = variants.thumb.buffer.length;
         contentType = "image/webp";
         ext = "webp";
       } catch (e) {
@@ -146,6 +148,15 @@ export const POST = timeRoute("media", async (request: NextRequest) => {
         height: variantHeight,
         thumb_path: thumbPath,
         thumb_url: thumbUrl,
+        // media-compression-audit item 5: the ONE byte-accounting field this
+        // route ever set was on the video branch (isVideo ? ... never set it
+        // for images at all -- so a per-owner storage view summing
+        // size_bytes would have been blind to every photo, the majority of
+        // objects. buffer.length here is post-compression (the object
+        // actually being stored), so this is what's really on disk, not the
+        // upload's raw size.
+        size_bytes: buffer.length,
+        thumb_size_bytes: thumbSizeBytes,
       })
       .select("id")
       .single();

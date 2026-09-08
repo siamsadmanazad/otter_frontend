@@ -169,6 +169,13 @@ export const POST = timeRoute("media.complete", async (request: NextRequest) => 
         height,
         thumb_path: thumbPath,
         thumb_url: thumbUrl,
+        // media-compression-audit item 5: this branch never set size_bytes at
+        // all before -- only completeVideo() below did. buffer.length here is
+        // POST-re-encode (or the raw upload, on the gif/heic skip path or a
+        // sharp failure) -- whatever ends up at `finalPath` is what's really
+        // charged against this owner's storage.
+        size_bytes: buffer.length,
+        thumb_size_bytes: thumbBuffer?.length ?? null,
       })
       .select("id")
       .single();
