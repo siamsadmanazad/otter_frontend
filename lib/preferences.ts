@@ -17,6 +17,18 @@ export interface PrivacyPrefs {
   profileVisibility: ProfileVisibility;
   whoCanMessage: WhoCanMessage;
   showActivity: boolean;
+  /**
+   * Independent of whoCanMessage: that governs people; this governs BUSINESS
+   * profiles specifically, on top of the booking-based directionality gate
+   * (POST /api/chat/conversations -- a business normally needs a prior
+   * booking with this explorer before it can open a new thread at all).
+   * false is an absolute veto -- checked before the booking check, same
+   * posture as whoCanMessage=NONE, so a real booking does not override it.
+   * Default true: most people are fine hearing from businesses they've
+   * booked with; this exists for the person who explicitly wants zero
+   * business contact regardless.
+   */
+  allowBusinessMessages: boolean;
 }
 
 export interface BusinessPrefs {
@@ -81,6 +93,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     profileVisibility: "PUBLIC",
     whoCanMessage: "EVERYONE",
     showActivity: true,
+    allowBusinessMessages: true,
   },
   business: {
     isBusiness: false,

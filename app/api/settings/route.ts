@@ -22,6 +22,7 @@ const patchSchema = z.object({
       profileVisibility: z.enum(["PUBLIC", "FOLLOWERS", "PRIVATE"]),
       whoCanMessage: z.enum(["EVERYONE", "FOLLOWERS", "NONE"]),
       showActivity: z.boolean(),
+      allowBusinessMessages: z.boolean(),
     })
     .partial()
     .optional(),

@@ -331,14 +331,17 @@ export async function POST(request: NextRequest): Promise<Response> {
   // Enforce the target's who-can-message privacy preference. Read it defensively so
   // the route keeps working before the `preferences` migration reaches an env.
   let whoCanMessage = "EVERYONE";
+  let allowBusinessMessages = true;
   const { data: prefRow, error: prefErr } = await db
     .from("profiles")
     .select("preferences")
     .eq("id", targetId)
     .maybeSingle();
-  if (!prefErr && prefRow)
-    whoCanMessage = withDefaults((prefRow as any).preferences).privacy
-      .whoCanMessage;
+  if (!prefErr && prefRow) {
+    const privacy = withDefaults((prefRow as any).preferences).privacy;
+    whoCanMessage = privacy.whoCanMessage;
+    allowBusinessMessages = privacy.allowBusinessMessages;
+  }
 
   if (whoCanMessage === "NONE")
     return fail("This user isn't accepting new messages", 403);
@@ -398,6 +401,13 @@ export async function POST(request: NextRequest): Promise<Response> {
   // existing per-profile `blocks` table (unchanged, checked above) already
   // covers "an explorer blocked this business specifically."
   if (!conversationId && meProfile?.kind === "BUSINESS" && target.kind === "EXPLORER") {
+    // Privacy opt-out, checked FIRST and absolute: unlike the booking check
+    // below, a real booking does NOT override this. whoCanMessage governs
+    // people in general; this is the same idea scoped to businesses
+    // specifically (lib/preferences.ts's own doc comment on the field).
+    if (!allowBusinessMessages) {
+      return fail("This user isn't accepting messages from businesses", 403);
+    }
     const { data: qualifying } = await db
       .from("bookings")
       .select("id")
