@@ -1,4 +1,3 @@
-import sharp from "sharp";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerUser } from "@/lib/auth/server";
@@ -7,6 +6,7 @@ import { moderateImage } from "@/lib/moderation";
 import { captureRouteError, timeRoute } from "@/lib/observability";
 import { parseMp4Header } from "@/lib/media/mp4";
 import { MAX_IMAGE_BYTES, MAX_VIDEO_BYTES, formatCap } from "@/lib/media/limits";
+import { encodeImageVariants } from "@/lib/media/variants";
 
 const BUCKET = "posts";
 // 120s is the product cap (MEDIA.md §7.5). The 5s of slack absorbs the
@@ -99,11 +99,24 @@ export const POST = timeRoute("media.complete", async (request: NextRequest) => 
     let buffer = raw.buffer;
     let contentType = raw.contentType;
     let finalPath = rawPath;
+    let width: number | null = null;
+    let height: number | null = null;
+    let thumbPath: string | null = null;
+    let thumbUrl: string | null = null;
+    let thumbBuffer: Buffer | null = null;
 
-    // Mirrors app/api/media/route.ts's own skip-list exactly.
+    // Mirrors app/api/media/route.ts's own skip-list exactly. Re-encoded to
+    // two size-capped WebP variants (lib/media/variants.ts) rather than one
+    // flat-quality pass -- see that module for why a byte CAP, not a quality
+    // number, is what makes "this app never stores more than 150KB per image"
+    // a fact instead of an average.
     if (contentType !== "image/gif" && contentType !== "image/heic") {
       try {
-        buffer = await sharp(buffer).webp({ quality: 70, effort: 3 }).toBuffer();
+        const variants = await encodeImageVariants(buffer);
+        buffer = variants.feed.buffer;
+        width = variants.feed.width;
+        height = variants.feed.height;
+        thumbBuffer = variants.thumb.buffer;
         contentType = "image/webp";
         finalPath = `${user.id}/${crypto.randomUUID()}.webp`;
       } catch (e) {
@@ -123,6 +136,11 @@ export const POST = timeRoute("media.complete", async (request: NextRequest) => 
     if (finalPath !== rawPath) {
       try {
         await store.put(BUCKET, finalPath, buffer, contentType, "31536000, immutable");
+        if (thumbBuffer) {
+          thumbPath = `${user.id}/${crypto.randomUUID()}_thumb.webp`;
+          await store.put(BUCKET, thumbPath, thumbBuffer, "image/webp", "31536000, immutable");
+          thumbUrl = store.publicUrl(BUCKET, thumbPath);
+        }
       } catch (e) {
         return NextResponse.json(
           { error: e instanceof Error ? e.message : "Upload failed" },
@@ -147,6 +165,10 @@ export const POST = timeRoute("media.complete", async (request: NextRequest) => 
         // on whatever MEDIA_PROVIDER says later (MEDIA.md §6.2).
         provider: activeProviderId(),
         url,
+        width,
+        height,
+        thumb_path: thumbPath,
+        thumb_url: thumbUrl,
       })
       .select("id")
       .single();
@@ -156,6 +178,9 @@ export const POST = timeRoute("media.complete", async (request: NextRequest) => 
       message: "Media uploaded successfully",
       mediaId: media.id,
       url,
+      thumbUrl,
+      width,
+      height,
     });
   } catch (error) {
     console.error("Error completing upload:", error);

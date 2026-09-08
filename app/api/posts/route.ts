@@ -196,6 +196,16 @@ type PostMediaEntry = {
   type: "IMAGE" | "VIDEO";
   url: string;
   posterUrl: string | null;
+  /**
+   * The small-tile variant (lib/media/variants.ts): 320px/24KB WebP, for
+   * grid cells and photo strips that never render this image larger than a
+   * hundred-odd px on screen. Null on media rows written before the variant
+   * pipeline existed -- consumers fall back to [url]/[posterUrl].
+   */
+  thumbUrl: string | null;
+  /** [posterUrl]'s own thumb, for a VIDEO shown small (the same rows a photo
+   *  would use [thumbUrl] for). Null under the same condition as [thumbUrl]. */
+  posterThumbUrl: string | null;
   width: number | null;
   height: number | null;
   durationMs: number | null;
@@ -233,7 +243,9 @@ async function resolvePostMedia(
 
   const { data: rows, error } = await db
     .from("media")
-    .select("id, owner_id, media_type, url, provider, width, height, duration_ms, poster_media_id")
+    .select(
+      "id, owner_id, media_type, url, thumb_url, provider, width, height, duration_ms, poster_media_id"
+    )
     .in("id", ids);
   if (error) return { error: error.message };
 
@@ -244,10 +256,18 @@ async function resolvePostMedia(
   const posterIds = (rows ?? [])
     .map((r) => r.poster_media_id as string | null)
     .filter((v): v is string => typeof v === "string");
-  const posterById = new Map<string, { url: string }>();
+  const posterById = new Map<string, { url: string; thumbUrl: string | null }>();
   if (posterIds.length > 0) {
-    const { data: posters } = await db.from("media").select("id, url").in("id", posterIds);
-    for (const p of posters ?? []) posterById.set(p.id as string, { url: p.url as string });
+    const { data: posters } = await db
+      .from("media")
+      .select("id, url, thumb_url")
+      .in("id", posterIds);
+    for (const p of posters ?? []) {
+      posterById.set(p.id as string, {
+        url: p.url as string,
+        thumbUrl: (p.thumb_url as string | null) ?? null,
+      });
+    }
   }
 
   const media: PostMediaEntry[] = [];
@@ -267,9 +287,8 @@ async function resolvePostMedia(
       return { error: "A post can carry one video" };
     }
 
-    const posterUrl = isVideo
-      ? posterById.get((row.poster_media_id as string) ?? "")?.url ?? null
-      : null;
+    const poster = isVideo ? posterById.get((row.poster_media_id as string) ?? "") : undefined;
+    const posterUrl = poster?.url ?? null;
     // A video with no readable poster is refused rather than published: the
     // feed cannot draw a video tile without one (§3 G9), and `images` would
     // get nothing, which is exactly the empty card the do-no-harm rule exists
@@ -281,6 +300,8 @@ async function resolvePostMedia(
       type: isVideo ? "VIDEO" : "IMAGE",
       url: row.url as string,
       posterUrl,
+      thumbUrl: isVideo ? null : ((row.thumb_url as string | null) ?? null),
+      posterThumbUrl: isVideo ? (poster?.thumbUrl ?? null) : null,
       width: (row.width as number | null) ?? null,
       height: (row.height as number | null) ?? null,
       durationMs: (row.duration_ms as number | null) ?? null,

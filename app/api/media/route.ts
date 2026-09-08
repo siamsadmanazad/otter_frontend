@@ -1,4 +1,3 @@
-import sharp from "sharp";
 import { Buffer } from "buffer";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -8,6 +7,7 @@ import { isAllowed, limitKey } from "@/lib/ratelimit";
 import { moderateImage } from "@/lib/moderation";
 import { captureRouteError, timeRoute } from "@/lib/observability";
 import { formatCap, maxBytesFor } from "@/lib/media/limits";
+import { encodeImageVariants } from "@/lib/media/variants";
 
 const BUCKET = "posts";
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg", "image/gif", "image/heic"];
@@ -75,10 +75,23 @@ export const POST = timeRoute("media", async (request: NextRequest) => {
     let contentType = mimeType;
     let ext = (mimeType.split("/")[1] || "bin").replace("quicktime", "mov");
 
-    // Optimize still images to webp (skip gif/heic which sharp may not handle here).
+    // Re-encoded to two size-capped WebP variants (lib/media/variants.ts) --
+    // skip gif/heic, which sharp may not handle here, and which a re-encode
+    // would either break (animated gif) or gain nothing from re-deriving twice
+    // over (heic is already efficient; the win here is the RESIZE, not the
+    // codec, and a still gif is typically already small).
+    let thumbPath: string | null = null;
+    let thumbUrl: string | null = null;
+    let variantWidth: number | null = null;
+    let variantHeight: number | null = null;
+    let thumbBuffer: Buffer | null = null;
     if (isImage && mimeType !== "image/gif" && mimeType !== "image/heic") {
       try {
-        buffer = await sharp(buffer).webp({ quality: 70, effort: 3 }).toBuffer();
+        const variants = await encodeImageVariants(buffer);
+        buffer = variants.feed.buffer;
+        variantWidth = variants.feed.width;
+        variantHeight = variants.feed.height;
+        thumbBuffer = variants.thumb.buffer;
         contentType = "image/webp";
         ext = "webp";
       } catch (e) {
@@ -107,6 +120,11 @@ export const POST = timeRoute("media", async (request: NextRequest) => {
       // cache header. That is also what keeps the CDN hit ratio (and
       // therefore R2's Class B op count) where MEDIA.md §1.1 assumes.
       await store.put(BUCKET, path, buffer, contentType, "31536000, immutable");
+      if (thumbBuffer) {
+        thumbPath = `${user.id}/${crypto.randomUUID()}_thumb.webp`;
+        await store.put(BUCKET, thumbPath, thumbBuffer, "image/webp", "31536000, immutable");
+        thumbUrl = store.publicUrl(BUCKET, thumbPath);
+      }
     } catch (e) {
       return NextResponse.json(
         { error: e instanceof Error ? e.message : "Upload failed" },
@@ -124,6 +142,10 @@ export const POST = timeRoute("media", async (request: NextRequest) => {
         path,
         provider: activeProviderId(),
         url,
+        width: variantWidth,
+        height: variantHeight,
+        thumb_path: thumbPath,
+        thumb_url: thumbUrl,
       })
       .select("id")
       .single();
@@ -133,6 +155,7 @@ export const POST = timeRoute("media", async (request: NextRequest) => {
       message: "Media uploaded successfully",
       mediaId: media.id,
       url,
+      thumbUrl,
     });
   } catch (error) {
     console.error("Error processing file upload:", error);
@@ -152,15 +175,18 @@ export async function DELETE(request: NextRequest) {
   const db = createAdminClient();
   const { data: media } = await db
     .from("media")
-    .select("id, bucket, path, owner_id, provider")
+    .select("id, bucket, path, thumb_path, owner_id, provider")
     .eq("id", id)
     .maybeSingle();
   if (!media || media.owner_id !== user.profileId) {
     return NextResponse.json({ error: "Media not found" }, { status: 404 });
   }
   // Deletes follow the ROW's provider, never the current flag -- objects
-  // written before a cutover still live on Supabase (MEDIA.md §6.2).
-  await providerFor(media.provider).remove(media.bucket, [media.path]);
+  // written before a cutover still live on Supabase (MEDIA.md §6.2). The
+  // thumb variant (lib/media/variants.ts) is a second object at its own path
+  // -- omitting it here would leak it forever, same as DELETE /api/media/[id].
+  const paths = [media.path, media.thumb_path].filter((p): p is string => !!p);
+  await providerFor(media.provider).remove(media.bucket, paths);
   await db.from("media").delete().eq("id", id);
   return NextResponse.json({ message: "Media deleted", id });
 }
