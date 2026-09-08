@@ -81,6 +81,17 @@ export type ImageVariants = {
   thumb: EncodedVariant;
 };
 
+/**
+ * Just the `feed` variant — for a caller that has no small-tile render surface
+ * for this image (today: chat attachments, whose bubbles are never shown at
+ * grid/thumbnail size the way a post or profile photo is) and would otherwise
+ * pay for a `thumb` encode it throws away. Still gets the SAME resize + byte
+ * ceiling as every other image this app stores — the point of this module.
+ */
+export async function encodeFeedVariant(buffer: Buffer): Promise<EncodedVariant> {
+  return encodeWebpVariant(sharp(buffer, { failOn: "none" }), FEED_LONG_EDGE, FEED_MAX_BYTES);
+}
+
 /** Both stored variants from one decode of [buffer]. */
 export async function encodeImageVariants(buffer: Buffer): Promise<ImageVariants> {
   const source = sharp(buffer, { failOn: "none" });

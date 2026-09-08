@@ -1,4 +1,3 @@
-import sharp from "sharp";
 import { Buffer } from "buffer";
 import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -8,6 +7,7 @@ import { moderateImage } from "@/lib/moderation";
 import { ok, fail } from "@/lib/api/http";
 import { captureRouteError } from "@/lib/observability";
 import { CHAT_ATTACHMENTS_BUCKET } from "@/lib/api/chat-attachments";
+import { encodeFeedVariant } from "@/lib/media/variants";
 
 const MAX_IMAGE_MB = 10;
 const MAX_VIDEO_MB = 50;
@@ -102,10 +102,19 @@ export async function POST(request: NextRequest) {
         : mimeType.split("/")[1] || "bin"
       : (mimeType.split("/")[1] || "bin").replace("quicktime", "mov").replace("x-m4a", "m4a");
 
-    // Optimize still images to webp (skip gif/heic which sharp may not handle here).
+    // media-compression-audit item 4: was a flat webp({quality:70}) with no
+    // resize and no byte ceiling -- the one image-upload path in this app that
+    // hadn't been moved onto lib/media/variants.ts yet (posts/profile/tribe/
+    // business photos all go through /api/media/complete, which has). Same
+    // ceiling as every other stored image now: <=1080px, <=150KB. Only the
+    // `feed` variant -- a chat bubble is never rendered at grid/thumbnail size
+    // the way a post or profile photo is, so there is no small-tile surface
+    // here to spend a second encode pass generating a `thumb` for.
+    // (skip gif/heic, which sharp may not handle here).
     if (isImage && mimeType !== "image/gif" && mimeType !== "image/heic") {
       try {
-        buffer = await sharp(buffer).webp({ quality: 70, effort: 3 }).toBuffer();
+        const variant = await encodeFeedVariant(buffer);
+        buffer = variant.buffer;
         contentType = "image/webp";
         ext = "webp";
       } catch (e) {
