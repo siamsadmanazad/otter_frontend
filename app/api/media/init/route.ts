@@ -3,6 +3,7 @@ import { getServerUser } from "@/lib/auth/server";
 import { activeProvider, activeProviderId } from "@/lib/storage";
 import { enforceRateLimit } from "@/lib/ratelimit";
 import { timeRoute } from "@/lib/observability";
+import { checkDeclaredLength, maxBytesFor } from "@/lib/media/limits";
 
 const BUCKET = "posts";
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg", "image/gif", "image/heic"];
@@ -16,7 +17,8 @@ const VIDEO_TYPES = ["video/mp4", "video/quicktime"];
 // slow connection survivable -- see MEDIA.md §3 G14.
 const UPLOAD_TTL_SECONDS = 60 * 60;
 
-// POST /api/media/init  body { mimeType } -> { path, signedUrl, token }
+// POST /api/media/init  body { mimeType, contentLength? }
+//   -> { path, signedUrl, token, maxBytes }
 //
 // PERFORMANCE.md Phase 5 (P1-2): first half of a direct-to-storage upload
 // for IMAGES only -- the client PUTs bytes straight to Storage using the
@@ -70,12 +72,30 @@ export const POST = timeRoute("media.init", async (request: NextRequest) => {
     );
   }
 
+  // The size cap, checked BEFORE anything is signed (lib/media/limits.ts,
+  // layer 1). Until this existed the presigned PUT carried no length bound at
+  // all: on R2, which has no bucket-level file_size_limit, that admitted an
+  // object of any size from any signed-in account.
+  const declared = checkDeclaredLength(
+    body.contentLength,
+    isVideo ? "video" : "image"
+  );
+  if ("error" in declared) {
+    return NextResponse.json({ error: declared.error }, { status: 400 });
+  }
+
   const ext = (mimeType.split("/")[1] || "bin").replace("quicktime", "mov");
   const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
 
   let ticket;
   try {
-    ticket = await activeProvider().createUploadUrl(BUCKET, path, mimeType, UPLOAD_TTL_SECONDS);
+    ticket = await activeProvider().createUploadUrl(
+      BUCKET,
+      path,
+      mimeType,
+      UPLOAD_TTL_SECONDS,
+      declared.bytes
+    );
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Could not create upload URL" },
@@ -98,5 +118,8 @@ export const POST = timeRoute("media.init", async (request: NextRequest) => {
     ttlSeconds: ticket.ttlSeconds,
     signedUrl: ticket.uploadUrl,
     token: ticket.token,
+    // What this deployment will accept, so a client can refuse a file locally
+    // instead of learning about it from a 403 halfway through an upload.
+    maxBytes: maxBytesFor(isVideo ? "video" : "image"),
   });
 });

@@ -72,15 +72,35 @@ function r2Bucket(): string {
 export const r2Provider: StorageProvider = {
   id: "r2",
 
-  async createUploadUrl(bucket, path, contentType, ttlSeconds): Promise<UploadTicket> {
+  async createUploadUrl(
+    bucket,
+    path,
+    contentType,
+    ttlSeconds,
+    contentLength
+  ): Promise<UploadTicket> {
+    // Binding the length into the signature is what turns the size cap from a
+    // number we hope the client respects into one the STORE enforces. Without
+    // it a presigned PUT admits a body of any size, which on R2 -- where there
+    // is no bucket-level file_size_limit to fall back on -- is unbounded.
+    //
+    // Verified against the live bucket: with `content-length` signed, a PUT of
+    // exactly the declared size returns 200 and a PUT of 4x that size returns
+    // 403. `signableHeaders` is required; without it the presigner hoists
+    // content-length out of the signature and the cap silently does nothing.
+    const bindLength = typeof contentLength === "number" && contentLength > 0;
     const url = await getSignedUrl(
       s3(),
       new PutObjectCommand({
         Bucket: r2Bucket(),
         Key: objectKey(bucket, path),
         ContentType: contentType,
+        ...(bindLength ? { ContentLength: contentLength } : {}),
       }),
-      { expiresIn: ttlSeconds }
+      {
+        expiresIn: ttlSeconds,
+        ...(bindLength ? { signableHeaders: new Set(["content-length"]) } : {}),
+      }
     );
     return {
       provider: "r2",
@@ -88,8 +108,12 @@ export const r2Provider: StorageProvider = {
       uploadUrl: url,
       method: "PUT",
       // Content-Type is part of what was signed; sending a different one fails
-      // the signature check, so the client must echo this back exactly.
-      headers: { "Content-Type": contentType },
+      // the signature check, so the client must echo this back exactly. The
+      // same is now true of Content-Length whenever one was declared.
+      headers: {
+        "Content-Type": contentType,
+        ...(bindLength ? { "Content-Length": String(contentLength) } : {}),
+      },
       ttlSeconds,
     };
   },

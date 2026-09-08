@@ -6,6 +6,7 @@ import { activeProvider, activeProviderId } from "@/lib/storage";
 import { moderateImage } from "@/lib/moderation";
 import { captureRouteError, timeRoute } from "@/lib/observability";
 import { parseMp4Header } from "@/lib/media/mp4";
+import { MAX_IMAGE_BYTES, MAX_VIDEO_BYTES, formatCap } from "@/lib/media/limits";
 
 const BUCKET = "posts";
 // 120s is the product cap (MEDIA.md §7.5). The 5s of slack absorbs the
@@ -67,11 +68,31 @@ export const POST = timeRoute("media.complete", async (request: NextRequest) => 
   try {
     let raw;
     try {
-      raw = await store.download(BUCKET, rawPath);
+      // A RANGE read, not a full download, and bounded at the cap+1 byte:
+      // this is the last of the three size-cap layers (lib/media/limits.ts),
+      // and the one that covers Supabase -- whose signed-upload URLs cannot
+      // bind a length -- and any client too old to declare one. Reading the
+      // object with `download()` would mean pulling however many bytes the
+      // client actually PUT into this function BEFORE discovering it was too
+      // many, which is the cost the cap exists to prevent.
+      //
+      // An object at or under the cap comes back whole, so the happy path is
+      // still exactly one read.
+      raw = await store.downloadRange(BUCKET, rawPath, 0, MAX_IMAGE_BYTES);
     } catch {
       return NextResponse.json(
         { error: "Upload not found -- it may not have completed yet." },
         { status: 400 }
+      );
+    }
+
+    const uploadedBytes = raw.totalSize ?? raw.buffer.length;
+    if (uploadedBytes > MAX_IMAGE_BYTES) {
+      // Already stored, so remove it rather than leave it for a reaper.
+      await store.remove(BUCKET, [rawPath]).catch(() => {});
+      return NextResponse.json(
+        { error: `Images must be under ${formatCap(MAX_IMAGE_BYTES)}.` },
+        { status: 413 }
       );
     }
 
@@ -199,6 +220,12 @@ async function completeVideo(
   // width/height of 0 alongside a plausible duration is what a TRUNCATED file
   // looks like (verified against a real clip cut to 100 bytes) -- the mvhd box
   // was reachable but no track header was. Treat it as a failed parse.
+  // The same last-layer size check as the image path. On R2 the presign
+  // already bound the length, so this only fires for a provider that could not
+  // bind one -- but it is what makes the cap true regardless of provider.
+  if (sizeBytes !== undefined && sizeBytes > MAX_VIDEO_BYTES) {
+    return reject(`Videos must be under ${formatCap(MAX_VIDEO_BYTES)}.`, 413);
+  }
   if (!header || header.width <= 0 || header.height <= 0) {
     return reject("That video could not be read. Please try again.", 422);
   }

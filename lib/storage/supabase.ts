@@ -16,6 +16,13 @@ const SUPABASE_SIGNED_UPLOAD_TTL = 60;
 export const supabaseProvider: StorageProvider = {
   id: "supabase",
 
+  /**
+   * `contentLength` is accepted and deliberately ignored: Supabase's
+   * signed-upload handshake has no way to bind a size into the token, so there
+   * is nothing to enforce here. The cap on this path comes from the bucket's
+   * own `file_size_limit` and from `/api/media/complete` re-measuring what
+   * landed (lib/media/limits.ts, layer 3).
+   */
   async createUploadUrl(bucket, path, contentType): Promise<UploadTicket> {
     const db = createAdminClient();
     const { data, error } = await db.storage.from(bucket).createSignedUploadUrl(path);

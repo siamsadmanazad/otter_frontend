@@ -27,7 +27,12 @@ export type UploadTicket = {
   path: string;
   uploadUrl: string;
   method: "PUT";
-  /** Headers the client MUST send verbatim; an S3 presign covers Content-Type. */
+  /**
+   * Headers the client MUST send verbatim; an S3 presign covers Content-Type,
+   * and `Content-Length` too when a length was declared — sending a body of a
+   * different size then fails the signature check at the store (403), which is
+   * what makes the size cap real rather than advisory. See lib/media/limits.ts.
+   */
   headers: Record<string, string>;
   /** Supabase-only: the token half of its signed-upload handshake. */
   token?: string;
@@ -37,12 +42,22 @@ export type UploadTicket = {
 export interface StorageProvider {
   readonly id: StorageProviderId;
 
-  /** Pre-authorize a direct client upload to `path`. */
+  /**
+   * Pre-authorize a direct client upload to `path`.
+   *
+   * `contentLength`, when given, is the exact byte count the client has
+   * committed to sending. A provider that can bind it into the pre-authorization
+   * MUST do so — that is the only layer of the size cap an attacker cannot
+   * route around (lib/media/limits.ts). A provider that cannot (Supabase's
+   * signed-upload URLs carry no length) ignores it, and `/api/media/complete`
+   * re-measures what actually landed instead.
+   */
   createUploadUrl(
     bucket: string,
     path: string,
     contentType: string,
-    ttlSeconds: number
+    ttlSeconds: number,
+    contentLength?: number
   ): Promise<UploadTicket>;
 
   /** Server-side write (used for processed derivatives: WebP, posters). */

@@ -7,10 +7,9 @@ import { activeProvider, activeProviderId, providerFor } from "@/lib/storage";
 import { isAllowed, limitKey } from "@/lib/ratelimit";
 import { moderateImage } from "@/lib/moderation";
 import { captureRouteError, timeRoute } from "@/lib/observability";
+import { formatCap, maxBytesFor } from "@/lib/media/limits";
 
 const BUCKET = "posts";
-const MAX_IMAGE_MB = 10;
-const MAX_VIDEO_MB = 50;
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg", "image/gif", "image/heic"];
 const VIDEO_TYPES = ["video/mp4", "video/webm", "video/ogg", "video/mpeg", "video/quicktime", "video/x-msvideo"];
 
@@ -60,11 +59,15 @@ export const POST = timeRoute("media", async (request: NextRequest) => {
     if (!isImage && !isVideo) {
       return NextResponse.json({ error: "Invalid file type." }, { status: 400 });
     }
-    const maxBytes = (isVideo ? MAX_VIDEO_MB : MAX_IMAGE_MB) * 1024 * 1024;
+    // Was a local 10MB/50MB pair. Now the same numbers the signed-upload path
+    // enforces (lib/media/limits.ts) -- two routes writing to one bucket with
+    // two different ceilings is how a cap gets quietly bypassed by picking the
+    // other door.
+    const maxBytes = maxBytesFor(isVideo ? "video" : "image");
     if (file.size > maxBytes) {
       return NextResponse.json(
-        { error: `File size exceeds ${isVideo ? MAX_VIDEO_MB : MAX_IMAGE_MB}MB limit.` },
-        { status: 400 }
+        { error: `File size exceeds ${formatCap(maxBytes)} limit.` },
+        { status: 413 }
       );
     }
 
