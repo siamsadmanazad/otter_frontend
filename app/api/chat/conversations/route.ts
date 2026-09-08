@@ -401,26 +401,45 @@ export async function POST(request: NextRequest): Promise<Response> {
   // existing per-profile `blocks` table (unchanged, checked above) already
   // covers "an explorer blocked this business specifically."
   if (!conversationId && meProfile?.kind === "BUSINESS" && target.kind === "EXPLORER") {
-    // Privacy opt-out, checked FIRST and absolute: unlike the booking check
-    // below, a real booking does NOT override this. whoCanMessage governs
-    // people in general; this is the same idea scoped to businesses
-    // specifically (lib/preferences.ts's own doc comment on the field).
-    if (!allowBusinessMessages) {
-      return fail("This user isn't accepting messages from businesses", 403);
-    }
-    const { data: qualifying } = await db
+    // Two-tier qualifying bar, not a flat allow/block on allowBusinessMessages
+    // -- an unconditional privacy veto and an unconditional booking override
+    // would cancel each other out to the SAME outcome as no toggle at all
+    // (today the ONLY way a business reaches this branch is already via a
+    // booking, so "booking always wins" makes the toggle inert for the one
+    // thing it guards). Instead the opt-out NARROWS what counts as a
+    // qualifying booking rather than being bypassed by one:
+    //
+    //  - allowBusinessMessages = true (default, no objection raised): ANY
+    //    booking ever, any status -- even CANCELLED/EXPIRED/REFUNDED is a
+    //    real prior interaction with THIS business, not a cold contact.
+    //  - allowBusinessMessages = false (explicit opt-out): only an ACTIVE,
+    //    still-live booking -- PENDING_APPROVAL/PENDING_PAYMENT/CONFIRMED.
+    //    This is the transactional-message exception: a live reservation
+    //    still needs its confirmation/reminder/check-in logistics through,
+    //    but "we did business together once, a while ago" no longer buys a
+    //    business standing contact once the person has said no to that.
+    //    COMPLETED is deliberately excluded from the narrow tier too -- the
+    //    transaction is over, so a message at that point is a follow-up
+    //    (review request, upsell), not logistics, and is exactly the kind
+    //    of contact the opt-out exists to stop.
+    let bookingQuery = db
       .from("bookings")
       .select("id")
       .eq("business_id", me.profileId)
-      .eq("buyer_profile_id", targetId)
-      .limit(1)
-      .maybeSingle();
-    // ANY booking qualifies regardless of status -- even a cancelled or
-    // expired one is a real prior interaction with THIS business, not a cold
-    // contact, and a business legitimately needs to follow up on those too.
+      .eq("buyer_profile_id", targetId);
+    if (!allowBusinessMessages) {
+      bookingQuery = bookingQuery.in("status", [
+        "PENDING_APPROVAL",
+        "PENDING_PAYMENT",
+        "CONFIRMED",
+      ]);
+    }
+    const { data: qualifying } = await bookingQuery.limit(1).maybeSingle();
     if (!qualifying) {
       return fail(
-        "Businesses can only message customers who've messaged first or have an active booking",
+        allowBusinessMessages
+          ? "Businesses can only message customers who've messaged first or have a booking"
+          : "This user isn't accepting messages from businesses without an active booking",
         403
       );
     }
