@@ -15,6 +15,27 @@ import { enforceRateLimit } from "@/lib/ratelimit";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const AUDIENCE_MODES = new Set(["EVERYONE", "FOLLOWERS", "GROUP"]);
 
+// 2026-09-09 · video framing — whitelist the shape rather than trust it
+// verbatim, same as every other jsonb payload this route touches
+// (audience_snapshot, attachments elsewhere in chat). Never trusted for
+// anything but replaying a Transform: nothing here is a path, a url, or an
+// id, so there is no injection surface, just a client that could otherwise
+// wedge NaN/Infinity into a column every future reader assumes is finite.
+function sanitizeVideoTransform(input: unknown): Record<string, number | boolean> | null {
+  if (!input || typeof input !== "object") return null;
+  const rec = input as Record<string, unknown>;
+  const nums: Record<string, number> = {};
+  for (const key of ["offsetX", "offsetY", "scale", "rotation", "srcAspect"] as const) {
+    const v = rec[key];
+    if (typeof v !== "number" || !Number.isFinite(v)) return null;
+    nums[key] = v;
+  }
+  // scale/srcAspect are divisors or multipliers downstream (client-side
+  // Transform math) — zero or negative would collapse or mirror the video.
+  if (nums.scale <= 0 || nums.srcAspect <= 0) return null;
+  return { ...nums, fill: rec.fill !== false };
+}
+
 // stories_media_pair_chk requires media_path and media_url together (the
 // purge job clears both at once). /api/media's response never carries the
 // storage path (feed_repository.uploadImage, reused here unmodified per
@@ -200,6 +221,13 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     const durationHours = body.durationHours === 48 ? 48 : 24;
 
+    // Only meaningful on a video -- a framed photo bakes its transform into
+    // the uploaded pixels instead (story_editor_screen.dart's whole reason
+    // for existing), so a photo's video_transform is always null even if the
+    // client sent one.
+    const videoTransform =
+      resolved.media_kind === "VIDEO" ? sanitizeVideoTransform(body.videoTransform) : null;
+
     const supabase = await createActorClient(request);
     const { data, error } = await supabase
       .from("stories")
@@ -219,6 +247,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         audience_mode: audienceMode,
         audience_group_id: audienceMode === "GROUP" ? audienceGroupId : null,
         duration_hours: durationHours,
+        video_transform: videoTransform,
       })
       .select()
       .single();
