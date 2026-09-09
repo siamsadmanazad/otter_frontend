@@ -4,11 +4,14 @@ import { getServerUser } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/http";
 
 // POST /api/chat/conversations/[id]/state
-//   body { archived?, accept?, muted?, pinned? }
-//   accept:true          -> accept a message request (accept_conversation_request)
-//   archived:true|false  -> archive / unarchive (set_conversation_archived)
-//   muted:true|false     -> mute / unmute (chat_set_muted)
-//   pinned:true|false    -> pin / unpin (chat_set_pinned)
+//   body { archived?, accept?, muted?, pinned?, screenshotProtected? }
+//   accept:true                    -> accept a message request (accept_conversation_request)
+//   archived:true|false            -> archive / unarchive (set_conversation_archived)
+//   muted:true|false               -> mute / unmute (chat_set_muted)
+//   pinned:true|false              -> pin / unpin (chat_set_pinned)
+//   screenshotProtected:true|false -> chat_set_screenshot_protected. Shared by every
+//     participant (not a per-user cursor like the three above) -- see the migration's
+//     doc comment for why: Android's FLAG_SECURE block can't be "on for me only."
 // Actor client so the RPCs resolve auth.uid() to the caller's participant row.
 export async function POST(
   request: NextRequest,
@@ -59,6 +62,23 @@ export async function POST(
       return fail(error.message, status);
     }
     return ok(data, body.pinned ? "Conversation pinned" : "Conversation unpinned");
+  }
+
+  if (typeof body.screenshotProtected === "boolean") {
+    const { data, error } = await db.rpc("chat_set_screenshot_protected", {
+      p_conversation: id,
+      p_protected: body.screenshotProtected,
+    });
+    if (error) {
+      const status = error.code === "42501" ? 403 : 500;
+      return fail(error.message, status);
+    }
+    return ok(
+      data,
+      body.screenshotProtected
+        ? "Screenshot protection on"
+        : "Screenshot protection off"
+    );
   }
 
   return fail("Nothing to update", 400);

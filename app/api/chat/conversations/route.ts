@@ -121,6 +121,7 @@ export const GET = timeRoute("chat.conversations", async (request: NextRequest):
       .from("conversations")
       .select(
         "id, serial, type, name, cover_image, last_message_id, last_message_at, created_by, created_at, " +
+          "screenshot_protected, " +
           "last_message:messages!conversations_last_message_fk(" +
           "id, content, sender_id, created_at, deleted_at, attachments, expires_at, listen_once, voice_played_at, " +
           "message_reads(user_id))"
@@ -276,6 +277,7 @@ export const GET = timeRoute("chat.conversations", async (request: NextRequest):
       membersCount: members.length,
       muted: mutedByConv.get(c.id) ?? false,
       pinnedAt: pinnedAtByConv.get(c.id) ?? null,
+      screenshotProtected: !!c.screenshot_protected,
       blocked: other ? blockedIds.has(other.id) : false,
       // stories.md 4.1 — a live, unseen story on this DIRECT peer. Never set
       // for a group conversation (there's no single "the peer" to ring).

@@ -144,6 +144,16 @@ function sanitizeAttachments(input: unknown): Record<string, unknown>[] {
           lng <= 180
         );
       }
+      if (type === "screenshot_alert") {
+        // System notice (chat_screenshot_protection.sql) — sender_id is
+        // already who took it, so the only payload is which kind of capture.
+        // No conversation-level "is protection actually on" check here: by
+        // the time this hits the DB the client already decided to send it,
+        // and a stale/racing toggle producing one extra notice is harmless
+        // (unlike a missed one, which is the failure mode that matters).
+        const kind = (a as Record<string, unknown>).kind;
+        return kind === "screenshot" || kind === "record";
+      }
       return false;
     })
     .slice(0, MAX_ATTACHMENTS_PER_MESSAGE)
@@ -175,6 +185,8 @@ function sanitizeAttachments(input: unknown): Record<string, unknown>[] {
           }
         : a.type === "location"
         ? { type: a.type, lat: a.lat, lng: a.lng }
+        : a.type === "screenshot_alert"
+        ? { type: a.type, kind: a.kind }
         : {
             type: a.type,
             path: a.path,
