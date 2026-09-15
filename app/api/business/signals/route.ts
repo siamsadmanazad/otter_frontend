@@ -6,7 +6,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 // GET /api/business/signals?businessId=<uuid>
 // business_identity_and_standing.md Track C — a business's rolling 30-day
-// public Signals (activeThisWeek, savedThisMonth), via business_signals().
+// public Signals, via business_signals(): activeThisWeek, savedThisMonth and
+// medianReplySeconds. The last of those arrived with the XP ledger
+// (20260915170000) — C3 specified three chips and only two were ever built.
+// The response is the RPC's jsonb verbatim, so new signals need no change here.
 // No auth gate, same posture as /api/business/merits — these are public
 // trust chips, always recomputed fresh (no "expired" state to hide behind
 // an auth check).
