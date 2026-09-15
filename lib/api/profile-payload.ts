@@ -38,7 +38,16 @@ export async function buildProfilePayload(
   const allowed = await canViewProfile(db, viewerIdForSelfCheck, userId, profile.preferences);
 
   const isBusiness = profile.kind === "BUSINESS";
-  const [posts, comments, followers, following, businessRow, placeRow, serviceCount] = await Promise.all([
+  const [
+    posts,
+    comments,
+    followers,
+    following,
+    businessRow,
+    placeRow,
+    serviceCount,
+    availabilityRow,
+  ] = await Promise.all([
     db.from("posts").select("id", { count: "exact", head: true }).eq("owner_id", userId),
     db.from("comments").select("id", { count: "exact", head: true }).eq("owner_id", userId),
     db.from("follows").select("follower_id", { count: "exact", head: true }).eq("following_id", userId),
@@ -47,7 +56,7 @@ export async function buildProfilePayload(
       ? db
           .from("business_profiles")
           .select(
-            "legal_name, contact_email, contact_phone, website, hours, price_band, service_area, verification, niche:niches(id, slug, display_name, color_hex, icon_key)"
+            "legal_name, contact_email, contact_phone, website, hours, price_band, service_area, verification, story, tags, niche:niches(id, slug, display_name, color_hex, icon_key)"
           )
           .eq("profile_id", userId)
           .maybeSingle()
@@ -80,6 +89,12 @@ export async function buildProfilePayload(
           .eq("owner_profile_id", userId)
           .eq("status", "ACTIVE")
       : Promise.resolve({ count: 0 }),
+    // docs/profile_journey.md Phase 5 -- one boolean for the Journey's
+    // "Bookable" stage. Server-side because it spans every offering's
+    // availability rules, which the client can't derive without N fetches.
+    isBusiness
+      ? db.rpc("business_has_availability", { p_business: userId })
+      : Promise.resolve({ data: null, error: null }),
   ]);
 
   const countErrors = [posts.error, comments.error, followers.error, following.error].filter(Boolean);
@@ -143,6 +158,16 @@ export async function buildProfilePayload(
             places: places.map(mapPlace),
             // A.5 -- the one number a customer actually wants from a venue.
             serviceCount: serviceCount.count ?? 0,
+            // Phase 5 -- the Journey distinguishes "column not shipped" from
+            // "shipped and empty", so these are emitted only when the read
+            // actually succeeded. Before the migration lands they are absent
+            // and the client omits those tasks rather than showing them
+            // permanently unticked.
+            ...(business.story !== undefined ? { story: business.story ?? "" } : {}),
+            ...(business.tags !== undefined ? { tags: business.tags ?? [] } : {}),
+            ...(availabilityRow && !availabilityRow.error
+              ? { hasAvailability: availabilityRow.data === true }
+              : {}),
           },
         }
       : {}),

@@ -38,6 +38,26 @@ export async function PATCH(request: NextRequest): Promise<Response> {
     if (!SERVICE_AREAS.has(body.serviceArea)) return fail("Invalid serviceArea", 400);
     patch.service_area = body.serviceArea;
   }
+  // docs/profile_journey.md Phase 5 -- the long-form description and the
+  // search tags. Both mirror limits the DB also enforces (600 chars / 10 tags)
+  // so a bad client gets a clear 400 instead of a constraint violation.
+  if (typeof body?.story === "string") {
+    const story = body.story.trim();
+    if (story.length > 600) return fail("story must be 600 characters or fewer", 400);
+    patch.story = story || null;
+  }
+  if (Array.isArray(body?.tags)) {
+    const tags = [
+      ...new Set(
+        body.tags
+          .filter((t: unknown): t is string => typeof t === "string")
+          .map((t: string) => t.trim().toLowerCase())
+          .filter((t: string) => t.length > 0 && t.length <= 30)
+      ),
+    ];
+    if (tags.length > 10) return fail("At most 10 tags", 400);
+    patch.tags = tags;
+  }
   if (Object.keys(patch).length === 0) return fail("Nothing to update", 400);
 
   const db = await createActorClient(request);
