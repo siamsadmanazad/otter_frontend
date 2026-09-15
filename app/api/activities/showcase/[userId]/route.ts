@@ -34,7 +34,25 @@ export async function GET(request: NextRequest, ctx: Ctx): Promise<Response> {
     });
     if (error) return fail(error.message, 500);
 
-    return ok(data, "Showcase fetched");
+    // Phase 8: the weeks-active count rides along on this one round trip, but
+    // stays a SEPARATE rpc rather than being folded into the showcase's
+    // return shape — so the trophy case's query is unchanged, and a slow
+    // streak aggregate can never delay or corrupt the badges.
+    //
+    // Its failure is deliberately non-fatal. A streak is an ornament on a
+    // profile; the badges are the profile. Same graceful-degradation posture
+    // the widget itself takes.
+    let streak: unknown = null;
+    try {
+      const { data: s, error: sErr } = await db.rpc("explorer_active_weeks", {
+        p_user: userId,
+      });
+      if (!sErr) streak = s;
+    } catch {
+      // swallowed on purpose — see above
+    }
+
+    return ok({ ...(data as object), streak }, "Showcase fetched");
   } catch (e) {
     console.error("GET /api/activities/showcase/[userId] error:", e);
     return fail("Internal server error", 500);
