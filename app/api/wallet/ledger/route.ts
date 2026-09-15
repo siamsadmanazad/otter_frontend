@@ -8,7 +8,10 @@ function mapTxn(t: Record<string, any>) {
     id: t.id,
     direction: t.direction, // CREDIT | DEBIT
     amountMinor: Number(t.amount_minor),
-    kind: t.kind, // topup | transfer_in | transfer_out | purchase | refund | adjustment
+    // Passed through verbatim. Full vocabulary (wallet_transactions.kind):
+    //   balance:  topup | transfer_in | transfer_out | purchase | reward | refund | adjustment
+    //   booking:  booking_capture | host_earning | platform_fee | payout
+    kind: t.kind,
     counterpartyId: t.counterparty_id,
     reference: t.reference,
     note: t.note,
