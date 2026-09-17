@@ -81,6 +81,10 @@ export interface IntentPrefs {
 export interface TreePrefs {
   /// An `AchievementLimb` name, or "" for no choice yet.
   tendLimb: string;
+  /// A cosmetic `feature_key` the person owns and has equipped, or "" for the
+  /// default tree. Owning and equipping are separate on purpose: buying a
+  /// second skin must never silently replace the one you are wearing.
+  skin: string;
 }
 
 export interface Preferences {
@@ -130,6 +134,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   },
   tree: {
     tendLimb: "",
+    skin: "",
   },
 };
 

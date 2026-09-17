@@ -60,6 +60,7 @@ const patchSchema = z.object({
   tree: z
     .object({
       tendLimb: z.string().max(24),
+      skin: z.string().max(64),
     })
     .partial()
     .optional(),
