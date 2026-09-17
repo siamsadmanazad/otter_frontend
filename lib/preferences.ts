@@ -71,6 +71,18 @@ export interface IntentPrefs {
   chosenAt: string;
 }
 
+// achievement_tree.md Phase 8 — "Tend": the one limb of the achievement tree
+// this person has chosen to focus on. A stated intention, changeable any time,
+// with no lock-in and no penalty for switching — which is what separates it
+// from a commitment device that punishes you.
+//
+// Stored as a preference rather than a column because nothing server-side
+// queries it: it steers what the app *surfaces*, never what it grants.
+export interface TreePrefs {
+  /// An `AchievementLimb` name, or "" for no choice yet.
+  tendLimb: string;
+}
+
 export interface Preferences {
   notifications: NotificationPrefs;
   privacy: PrivacyPrefs;
@@ -78,6 +90,7 @@ export interface Preferences {
   onboarding: OnboardingPrefs;
   profile: ProfilePrefs;
   intent: IntentPrefs;
+  tree: TreePrefs;
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -115,6 +128,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
     kind: "",
     chosenAt: "",
   },
+  tree: {
+    tendLimb: "",
+  },
 };
 
 /** Merge a stored (possibly partial / `{}`) blob over the defaults. */
@@ -127,6 +143,7 @@ export function withDefaults(stored: any): Preferences {
     onboarding: { ...DEFAULT_PREFERENCES.onboarding, ...(s.onboarding ?? {}) },
     profile: { ...DEFAULT_PREFERENCES.profile, ...(s.profile ?? {}) },
     intent: { ...DEFAULT_PREFERENCES.intent, ...(s.intent ?? {}) },
+    tree: { ...DEFAULT_PREFERENCES.tree, ...(s.tree ?? {}) },
   };
 }
 
@@ -140,5 +157,6 @@ export function mergePreferences(current: Preferences, patch: any): Preferences 
     onboarding: { ...current.onboarding, ...(p.onboarding ?? {}) },
     profile: { ...current.profile, ...(p.profile ?? {}) },
     intent: { ...current.intent, ...(p.intent ?? {}) },
+    tree: { ...current.tree, ...(p.tree ?? {}) },
   };
 }

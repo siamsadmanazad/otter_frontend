@@ -53,6 +53,16 @@ const patchSchema = z.object({
     })
     .partial()
     .optional(),
+  // achievement_tree.md Phase 8 — "Tend". Validated as a bounded string rather
+  // than an enum of limb names: the limb list lives in
+  // achievement_roadmap.dart, and duplicating it here is exactly the drift
+  // decision D1 exists to prevent. An unknown value simply selects nothing.
+  tree: z
+    .object({
+      tendLimb: z.string().max(24),
+    })
+    .partial()
+    .optional(),
   // Business Mode Phase 1.1 (the Fork) — see IntentPrefs in lib/preferences.ts.
   intent: z
     .object({
