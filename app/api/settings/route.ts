@@ -61,6 +61,10 @@ const patchSchema = z.object({
     .object({
       tendLimb: z.string().max(24),
       skin: z.string().max(64),
+      frame: z.string().max(64),
+      // Three, because that is what the product sells. Bounded here as well as
+      // in the UI: a client that asked for thirty would otherwise get thirty.
+      slots: z.array(z.string().max(64)).max(3),
     })
     .partial()
     .optional(),

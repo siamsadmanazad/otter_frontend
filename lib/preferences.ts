@@ -85,6 +85,12 @@ export interface TreePrefs {
   /// default tree. Owning and equipping are separate on purpose: buying a
   /// second skin must never silently replace the one you are wearing.
   skin: string;
+  /// The frame cosmetic, equipped the same way and in its own slot — a frame
+  /// and a skin are worn together, not instead of each other.
+  frame: string;
+  /// Up to three badge keys pinned to the front of the profile trophy case
+  /// (the `slots_three` product). Empty means the default order.
+  slots: string[];
 }
 
 export interface Preferences {
@@ -135,6 +141,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   tree: {
     tendLimb: "",
     skin: "",
+    frame: "",
+    slots: [],
   },
 };
 
